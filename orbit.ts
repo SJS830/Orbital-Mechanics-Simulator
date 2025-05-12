@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { transformWithEsbuild } from "vite";
 
 export const Bodies = {
     "Sun": {
@@ -169,6 +170,16 @@ export type OrbitParams = {
     tau: number; // time of perihelion passage
 }
 
+export function getSOI(body: string) {
+    let SOI = Infinity;
+    
+    if (Bodies[body].parentBody) {
+        SOI = Math.pow(Bodies[body].mu / Bodies[Bodies[body].parentBody].mu, 2 / 5) * Bodies[body].params.a;
+    }
+
+    return SOI;
+}
+
 export class Orbit {
     body: string;
     params: OrbitParams;
@@ -249,9 +260,21 @@ export class Orbit {
 
         let E, M, v, r;
         if ("v" in at) {
-            v = at.v;
-            r = a * (1 - e * e) / (1 + e * Math.cos(v));
-            E = 2 * Math.atan(Math.tan(v / 2) / Math.sqrt((1 + e) / (1 - e)));
+            v = THREE.MathUtils.euclideanModulo(at.v, 2 * Math.PI) - Math.PI;
+
+            if (e < 1) {
+                r = a * (1 - e * e) / (1 + e * Math.cos(v));
+                E = 2 * Math.atan(Math.tan(v / 2) / Math.sqrt((1 + e) / (1 - e)));
+            } else {
+                let vmin = -Math.PI + Math.acos(1 / e);
+                let vmax = Math.PI - Math.acos(1 / e);
+                if (!(vmin < v && v < vmax)) {
+                    return undefined;
+                }
+
+                r = a * (e * e - 1) / (1 + e * Math.cos(v));
+                E = 2 * Math.atanh(Math.tan(v / 2) / Math.sqrt((e + 1) / (e - 1)));
+            }
             /*if (E == undefined) {
                 console.error("E undefined", this, at);
             }*/
@@ -318,10 +341,7 @@ export class Orbit {
             vmax = Math.PI - Math.acos(1 / params.e) - .01;
         }
 
-        let SOI = Infinity;
-        if (onlyInSphereOfInfluence && Bodies[body].parentBody) {
-            SOI = Math.pow(Bodies[body].mu / Bodies[Bodies[body].parentBody].mu, 2 / 5) * Bodies[body].params.a;
-        }
+        let SOI = getSOI(body);
 
         for (let v = vmin; v <= vmax + .0001 /* floating point error */; v += (vmax - vmin) / N) {
             let state = this.getPositionVelocity({ v });
@@ -336,7 +356,65 @@ export class Orbit {
         return { positions, velocities, true_anomalies, SOI };
     }
 
+    getN() {
+        return Math.sqrt(Bodies[this.body].mu / Math.pow(this.params.a, 3));
+    }
+
     getPeriod() {
-        return (2 * Math.PI) / Math.sqrt(Bodies[this.body].mu / Math.pow(this.params.a, 3));
+        return (2 * Math.PI) / this.getN();
+    }
+
+    getMaxR() {
+        let { e, a } = this.params;
+        
+        if (e >= 1) {
+            return Infinity;
+        } else {
+            return a * (1 - e * e) / (1 - e);
+        }
+    }
+
+    getEscapeInfo() {
+        let SOI = getSOI(this.body);
+
+        if (this.getMaxR() < SOI) {
+            return undefined;
+        }
+
+        let { positions, velocities, true_anomalies } = this.getPointsOnOrbit();
+        let { e, tau } = this.params;
+
+        let i = 0;
+        while (true_anomalies[i] < 0) {
+            i++;
+        }
+
+        while (i < positions.length && positions[i].length() < SOI) {
+            i++;
+        }
+        i = Math.min(i, positions.length - 1);
+
+        /*let E = 2 * Math.atan(Math.tan(true_anomalies[i] / 2) / Math.sqrt((1 + e) / (1 - e)));
+        let M = E - e * Math.sin(E);*/
+        // orbital motion page 85
+        let F = 2 * Math.atanh(Math.tan(true_anomalies[i] / 2) / Math.sqrt((e + 1) / (e - 1)));
+        let M = e * Math.sinh(F) - F;
+        let t = tau + M / this.getN();
+
+        console.log({ M, t, v: true_anomalies[i] });
+
+        console.log(velocities);
+        return { position: positions[i], velocity: velocities[i], /*mean_anomaly: M,*/ time: t };
+    }
+
+    getMeanAnomaly(t: number, mod: boolean = true) {
+        let { tau, a } = this.params;
+        let n = Math.sqrt(Bodies[this.body].mu / Math.pow(a, 3));
+
+        if (mod) {
+            return THREE.MathUtils.euclideanModulo(n * (t - tau), 2 * Math.PI);
+        } else {
+            return n * (t - tau);
+        }
     }
 }

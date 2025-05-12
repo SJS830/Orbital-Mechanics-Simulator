@@ -23,32 +23,57 @@ export function updateOrbitRendering() {
     states = [initialState];
     let absTime = 0;
 
+    let j = 0; //state pointer
     for (let i = 0; i < maneuvers.length; i++) {
         let maneuver = maneuvers[i];
-        absTime += maneuver.time;
+        let state = states[j];
 
-        let { position, velocity } = states[i].getPositionVelocity({ t: absTime });
+        let escapeInfo = state.getEscapeInfo();
+
+        //todo: make orbit time adding impossible if on escape traj
+        if (escapeInfo !== undefined) {
+            if (escapeInfo.time < absTime + maneuver.time) {
+                let planetInfo = globals.scene.getObjectByName(state.body)?.userData.orbit.getPositionVelocity({ t: escapeInfo.time });
+
+                states.push(new Orbit(Bodies[state.body].parentBody, { position: escapeInfo.position.add(planetInfo.position), velocity: escapeInfo.velocity.add(planetInfo.velocity), time: escapeInfo.time }));
+
+                j++;
+                continue;
+            }
+        }
+
+        absTime += maneuver.time + maneuver.orbits * state.getPeriod();
+
+        let { position, velocity } = state.getPositionVelocity({ t: absTime });
 
         let cartesianManeuver = velocity.clone().normalize().multiplyScalar(maneuver.prograde);
         cartesianManeuver.add(position.clone().normalize().multiplyScalar(maneuver.radialout));
         cartesianManeuver.add(position.clone().cross(velocity).normalize().multiplyScalar(maneuver.normal));
 
         {
-            const maneuverNode = new THREE.ArrowHelper(velocity.clone().normalize(), position.clone().multiplyScalar(COORD_SCALE), velocity.clone().length() / 10000, 0xffff00);
+            /*const maneuverNode = new THREE.ArrowHelper(velocity.clone().normalize(), position.clone().multiplyScalar(COORD_SCALE), velocity.clone().length() / 10000, 0xffff00);
             maneuverNode.name = `maneuverNode${Z}`;
-            globals.scene.getObjectByName(states[i].body)?.add(maneuverNode);
+            globals.scene.getObjectByName(state.body)?.add(maneuverNode);*/
         }
         {
             const maneuverNode = new THREE.ArrowHelper(cartesianManeuver.clone().normalize(), position.clone().multiplyScalar(COORD_SCALE), cartesianManeuver.clone().length() / 10000, 0xff0000);
             maneuverNode.name = `maneuverNode${Z}`;
-            globals.scene.getObjectByName(states[i].body)?.add(maneuverNode);
+            globals.scene.getObjectByName(state.body)?.add(maneuverNode);
         }
         //console.log({cartesianManeuver, position, velocity});
 
-        states.push(new Orbit("Earth", { position, velocity: velocity.add(cartesianManeuver).multiplyScalar(-1) /* no idea why but this makes the orientation right */, time: absTime }));
+        states.push(new Orbit(state.body, { position, velocity: velocity.add(cartesianManeuver).multiplyScalar(-1) /* no idea why but this makes the orientation right */, time: absTime }));
+
+        j++;
     }
 
-    console.log({states});
+    for (const state of states) {
+        console.log("AAAAAAAA");
+        
+        let escapeInfo = state.getEscapeInfo();
+
+        console.log("escapeInfo", escapeInfo, "maxR", state.getMaxR());
+    }
 
     let rocketOrbit;
     while ((rocketOrbit = globals.scene.getObjectByName("rocketOrbit"))) {
@@ -80,9 +105,10 @@ gui.add({ addManeuver: () => {
 
     const folder = gui.addFolder(`Maneuver ${maneuvers.length}`).onChange(updateOrbitRendering);
     folder.add(maneuver, "time", 0, currentState.getPeriod()).name("Time to Maneuver");
-    folder.add(maneuver, "prograde", 0, 10000).name("Prograde Velocity Change");
-    folder.add(maneuver, "normal", 0, 10000).name("Normal Velocity Change");
-    folder.add(maneuver, "radialout", 0, 10000).name("Radial Velocity Change");
+    folder.add(maneuver, "orbits", 0, 10, 1).name("Number of Orbits");
+    folder.add(maneuver, "prograde", -10000, 10000).name("Prograde Velocity Change");
+    folder.add(maneuver, "normal", -10000, 10000).name("Normal Velocity Change");
+    folder.add(maneuver, "radialout", -10000, 10000).name("Radial Velocity Change");
 
     updateOrbitRendering();
 }}, "addManeuver").name("Add Maneuver");
