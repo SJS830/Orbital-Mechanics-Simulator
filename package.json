@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "lil-gui": "^0.20.0",
     "three": "^0.176.0",
     "three-spritetext": "^1.9.6"
   },

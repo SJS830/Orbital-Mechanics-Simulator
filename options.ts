@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export const COORD_SCALE = 1 / 1000_000; // 1000 km = 1 unit
+export const COORD_SCALE = 1 / 10_000_000; // 10000 km = 1 unit
 
 export const globals: {
     camera: THREE.PerspectiveCamera | undefined;
@@ -11,3 +11,5 @@ export const globals: {
     scene: undefined,
     renderer: undefined
 };
+
+window["globals"] = globals;
