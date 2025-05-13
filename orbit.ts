@@ -10,8 +10,8 @@ export const Bodies = {
         params: {
             a: 0,
             e: 0,
-            AOP: 0,
-            LAN: 0,
+            omega: 0,
+            sigma: 0,
             i: 0,
             tau: 0
         }
@@ -25,8 +25,8 @@ export const Bodies = {
         params: {
             a: 57909175678,
             e: 0.20563069,
-            AOP: 0.5083233049,
-            LAN: 0.8435467745,
+            omega: 0.5083233049,
+            sigma: 0.8435467745,
             i: 0.1222580452,
             tau: -3.690328e6
         }
@@ -40,8 +40,8 @@ export const Bodies = {
         params: {
             a: 108208925513,
             e: 0.00677323,
-            AOP: 0.9573530628,
-            LAN: 1.338330513,
+            omega: 0.9573530628,
+            sigma: 1.338330513,
             i: 0.05924886665,
             tau: -2.716721e6
         }
@@ -55,8 +55,8 @@ export const Bodies = {
         params: {
             a: 149597887156,
             e: 0.01671022,
-            AOP: 1.993302665,
-            LAN: -0.1965352439,
+            omega: 1.993302665,
+            sigma: -0.1965352439,
             i: 0.000000872664626,
             tau: 2.167966e5
         }
@@ -70,8 +70,8 @@ export const Bodies = {
         params: {
             a: 227936637242,
             e: 0.09341233,
-            AOP: 4.999710318,
-            LAN: 0.8653087613,
+            omega: 4.999710318,
+            sigma: 0.8653087613,
             i: 0.03229923767,
             tau: -3.196961e6
         }
@@ -85,8 +85,8 @@ export const Bodies = {
         params: {
             a: 778412026775,
             e: 0.04839266,
-            AOP: -1.497532641,
-            LAN: 1.755035901,
+            omega: -1.497532641,
+            sigma: 1.755035901,
             i: 0.02278178273,
             tau: -2.045224e7
         }
@@ -100,8 +100,8 @@ export const Bodies = {
         params: {
             a: 1426725412588,
             e: 0.0541506,
-            AOP: -0.37146017,
-            LAN: 1.984701857,
+            omega: -0.37146017,
+            sigma: 1.984701857,
             i: 0.04336200713,
             tau: 1.100834e8
         }
@@ -115,8 +115,8 @@ export const Bodies = {
         params: {
             a: 2870972219970,
             e: 0.04716771,
-            AOP: 1.688333082,
-            LAN: 1.295555809,
+            omega: 1.688333082,
+            sigma: 1.295555809,
             i: 0.01343659178,
             tau: -1.047917e9
         }
@@ -130,8 +130,8 @@ export const Bodies = {
         params: {
             a: 4498252910764,
             e: 0.00858587,
-            AOP: -1.51407906,
-            LAN: 2.298977187,
+            omega: -1.51407906,
+            sigma: 2.298977187,
             i: 0.03087784153,
             tau: 1.445777e9
         }
@@ -145,8 +145,8 @@ export const Bodies = {
         params: {
             a: 5906376272436,
             e: 0.24880766,
-            AOP: 1.985543978,
-            LAN: 1.925158728,
+            omega: 1.985543978,
+            sigma: 1.925158728,
             i: 0.2991799771,
             tau: -3997267511407
         }
@@ -164,8 +164,8 @@ export type BodyInfo = {
 export type OrbitParams = {
     a: number; // semi-major axis
     e: number; // eccentricity
-    AOP: number; // argument of periapsis
-    LAN: number; // longitude of ascending node
+    omega: number; // argument of perihelion
+    sigma: number; // longitude of ascending node
     i: number; // inclination
     tau: number; // time of perihelion passage
 }
@@ -180,10 +180,6 @@ export function getSOI(body: string) {
     return SOI;
 }
 
-export function getMU(body: string): number {
-    return Bodies[body].mu;
-}
-
 export class Orbit {
     body: string;
     params: OrbitParams;
@@ -191,161 +187,144 @@ export class Orbit {
     constructor(body: string, info: {params: OrbitParams} | {position: THREE.Vector3, velocity: THREE.Vector3, time: number}) {
         this.body = body;
 
-        // since we're swapping y and z axes, we have to negate all cross products to preserve orientation
-
         if ("params" in info) {
             this.params = info.params;
         } else {
-            let { time } = info;
-            const position = new THREE.Vector3(info.position.x, info.position.z, info.position.y);
-            const velocity = new THREE.Vector3(info.velocity.x, info.velocity.z, info.velocity.y);
+            let time = info.time;
 
-            const mu = getMU(body);
+            //axes fix
+            //threejs: up y
+            //here: up z
+            //-z to fix orientation issues
+            let position = new THREE.Vector3(info.position.x, -info.position.z, info.position.y);
+            let velocity = new THREE.Vector3(info.velocity.x, -info.velocity.z, info.velocity.y);
 
-            const r = position.length();
-            const V2 = velocity.lengthSq();
-
-            // angular momentum vector
-            const h = new THREE.Vector3().crossVectors(position, velocity).negate();
-
-            const p = h.lengthSq() / mu; //(4.118)
-
-            // total energy of rocket
-            // < 0 = elipse, > 0 = hyperbola
-            const C = 0.5 * V2 - mu / r; //(4.110)
-            const a = Math.abs(mu / (2 * C));
-
-            // longitude of ascending node
-            let LAN;
-            if (h.y == 0) { //inclination = 0
-                LAN = 0;
-            } else {
-                LAN = Math.atan(-h.x / h.y);
+            //make sure inclination isnt 0
+            if (velocity.z == 0) {
+                velocity.z = 0.00001;
             }
+
+            const mu = Bodies[body].mu;
+
+            // orbital momentum vector
+            const H = new THREE.Vector3().crossVectors(position, velocity);
+
+            // eccentricity vector
+            const evec = new THREE.Vector3().crossVectors(velocity, H).divideScalar(mu).sub(position.clone().normalize());
+
+            // const vector pointing towards ascending node
+            let N = new THREE.Vector3(-H.y, H.x, 0);
+
+            // true anomaly
+            let v = evec.angleTo(position);
+            if (position.dot(velocity) >= 0) {
+                v = 2 * Math.PI - v;
+            }
+            //console.log({v});
 
             // inclination
-            const i = Math.acos(h.z / h.length());
+            const i = Math.acos(H.z / H.length()) || 0;
 
-            // argument of periapsis plus f
-            let AOPplusF;
-            if (i != 0) {
-                AOPplusF = Math.atan2(
-                    position.z * Math.asin(1 / i),
-                    (position.x * Math.cos(LAN) + position.y * Math.sin(LAN))
-                );
-            } else {AOPplusF
-                AOPplusF = Math.atan2(
-                    (position.y * Math.cos(LAN) - position.x * Math.sin(LAN)),
-                    (position.x * Math.cos(LAN) + position.y * Math.sin(LAN))
-                );
+            // eccentricity, eccentric anomaly
+            const e = evec.length();
+            const E = 2 * Math.atan(Math.tan(v / 2) / Math.sqrt((1 + e) / (1 - e)));
+
+            // longitude of ascending node
+            let sigma = Math.acos(N.x / N.length());
+            if (N.y < 0) {
+                sigma = 2 * Math.PI - sigma;
             }
 
-            //eccentriciy
-            let e;
-            if (C < 0) { // ellipse
-                e = Math.sqrt(1 - p / a);
-            } else { //hyperbola
-                e = Math.sqrt(1 + p / a);
+            // argument of perihelion
+            let omega = N.angleTo(evec);
+            if (evec.z < 0) {
+                omega = 2 * Math.PI - omega;
             }
 
-            const f = Math.acos((p / r - 1) / e);
-            
-            const AOP = AOPplusF - f;
+            // mean anomaly
+            const M = E - e * Math.sin(E);
 
-            // tau
-            let tau;
-            if (C < 0) { // ellipse
-                let E = Math.acos((1 - r / a) / e);
+            // semimajor axis
+            const a = 1 / (2 / position.length() - velocity.lengthSq() / mu);
 
-                let n = Math.sqrt(Bodies[this.body].mu / Math.pow(a, 3));
+            // time of perihelion passage
+            const tau = time - (M / (Math.sqrt(mu) / Math.sqrt(a * a * a)));
 
-                tau = time - (E - e * Math.sin(E)) / n;
-            } else { //hyperbola
-                let F = Math.acosh((r / a + 1) / e);
-
-                let v = Math.sqrt(mu) / a;
-                tau = time - (e * Math.sinh(F) - F) / v;
-            }
-
-            this.params = {a, e, i, AOP, LAN, tau};
+            this.params = { a, e, omega, sigma, i, tau };
         }
-
-        console.log(this.params);
     }
 
-    getPositionVelocity(at: {t: number} | {M: number} | {f: number}) {
+    getPositionVelocity(at: {t: number} | {M: number} | {v: number}) {
         const mu = Bodies[this.body].mu;
-        let { a, e, AOP, LAN, i, tau } = this.params;
+        let { a, e, omega, sigma, i, tau } = this.params;
 
-        let f, r, V2, phi;
+        let E, M, v, r;
+        if ("v" in at) {
+            v = THREE.MathUtils.euclideanModulo(at.v, 2 * Math.PI) - Math.PI;
 
-        if (e < 1) { //ellipse
-            let p = a * (1 - e * e);
-
-            if (!("f" in at)) {
-                let M;
-
-                if ("t" in at) {
-                    let n = this.getN();
-
-                    M = n * (at.t - tau); 
-                } else {
-                    M = at.M;
-                }
-
-                let E = M;
-                for (let i = 0; i < 10; i++) {
-                    E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
-                }
-
-                f = 2 * Math.atan(Math.sqrt((1 + e) / (1 - e)) * Math.tan(E / 2));
+            if (e < 1) {
+                r = a * (1 - e * e) / (1 + e * Math.cos(v));
+                E = 2 * Math.atan(Math.tan(v / 2) / Math.sqrt((1 + e) / (1 - e)));
             } else {
-                f = at.f;
+                let vmin = -Math.PI + Math.acos(1 / e);
+                let vmax = Math.PI - Math.acos(1 / e);
+                if (!(vmin < v && v < vmax)) {
+                    return undefined;
+                }
+
+                r = a * (e * e - 1) / (1 + e * Math.cos(v));
+                E = 2 * Math.atanh(Math.tan(v / 2) / Math.sqrt((e + 1) / (e - 1)));
+            }
+            /*if (E == undefined) {
+                console.error("E undefined", this, at);
+            }*/
+        } else {
+            // new mean anomaly
+            if ("M" in at) {
+                M = at.M;
+            } else {
+                M = (at.t - tau) * Math.sqrt(mu / (a * a * a));
+            }
+            console.log({M});
+            M = THREE.MathUtils.euclideanModulo(M, 2 * Math.PI);
+
+            // eccentric anomaly
+            E = M;
+            for (let i = 0; i < 10; i++) {
+                E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
             }
 
-            r = p / (1 + e * Math.cos(f));
+            // true anomaly
+            v = 2 * Math.atan2(Math.sqrt(1 + e) * Math.sin(E / 2), Math.sqrt(1 - e) * Math.cos(E / 2));
 
-            V2 = mu * (2 / r - 1 / a);
-            phi = Math.asin(Math.sqrt(a * p / (r * (2 * a - r))));
-
-            // have r, f, phi, V2
-        } else { //hyperbola
-            let p = a * (e * e - 1);
-            let v = Math.sqrt(mu) / a;
-
-            if (!("f" in at)) {
-                let M;
-
-                if ("t" in at) {
-                    M = v * (at.t - tau);
-                } else {
-                    M = at.M;
-                }
-
-                let F = M;
-                for (let i = 0; i < 10; i++) {
-                    F = F - (e * Math.sinh(F) - F - M) / (1 - e * Math.cosh(F));
-                }
-
-                f = 2 * Math.atan(Math.sqrt((e + 1) / (e - 1) ) * Math.tanh(F / 2));
-            } else {
-                f = at.f;
-            }
-
-            r = p / (1 + e * Math.cos(f));
-            V2 = mu * (2 / r + 1 / a);
-            phi = Math.PI / 2 + a * Math.acos(Math.sqrt((e * e - 1) / (r * (2 * a + r))));
+            // distance
+            r = a * (1 - e * Math.cos(E));
         }
 
-        const position = new THREE.Vector3(
-            Math.cos(LAN) * Math.cos(AOP + f) - Math.sin(LAN) * Math.sin(AOP + f) * Math.cos(i),
-            Math.sin(AOP + f) + Math.sin(i),
-            Math.sin(LAN) * Math.cos(AOP + f) + Math.cos(LAN) * Math.sin(AOP + f) * Math.cos(i)
-        ).multiplyScalar(r);
+        //1 + e * Math.cos(v) = 0
+        //e * Math.cos(v) = -1
+        //v = Math.acos(-1 / e)
 
-        const velocity = new THREE.Vector3();
+        // position and velocity in orbital plane
+        const o = new THREE.Vector3(Math.cos(v), Math.sin(v), 0).multiplyScalar(r);
 
-        return { position, velocity };
+        const oprime = new THREE.Vector3(-Math.sin(E), Math.sqrt(1 - e * e) * Math.cos(E), 0).multiplyScalar(Math.sqrt(mu * a) / r);
+
+        // transform to inertial frame
+        const rotations = [
+            new THREE.Euler(0, 0, -omega),
+            new THREE.Euler(i, 0, 0), // should be -i, but i works, only god knows why
+            new THREE.Euler(0, 0, -sigma)
+        ];
+
+        const Rprime = o.applyEuler(rotations[0]).applyEuler(rotations[1]).applyEuler(rotations[2]);
+        const Vprime = oprime.applyEuler(rotations[0]).applyEuler(rotations[1]).applyEuler(rotations[2]);
+
+        // Threejs has up axis as y instead of z, im too lazy to go back and do everything the right way
+        const R = new THREE.Vector3(Rprime.x, -Rprime.z, Rprime.y);
+        const V = new THREE.Vector3(Vprime.x, -Vprime.z, Vprime.y);
+
+        return { position: R, velocity: V, true_anomaly: v };
     }
 
     getPointsOnOrbit(N: number = 2048, onlyInSphereOfInfluence = true) {
@@ -365,7 +344,7 @@ export class Orbit {
         let SOI = getSOI(body);
 
         for (let v = vmin; v <= vmax + .0001 /* floating point error */; v += (vmax - vmin) / N) {
-            let state = this.getPositionVelocity({ f: v });
+            let state = this.getPositionVelocity({ v });
 
             if (state.position.length() < SOI) {
                 positions.push(state.position);
