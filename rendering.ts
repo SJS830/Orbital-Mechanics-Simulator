@@ -12,7 +12,7 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
         line.name = "orbitLine";
 
         if (addLabels) {
-            for (const label of ["Ap", "Pe", "AN", "DN"]) {
+            for (const label of ["Ap", "Pe"/*, "AN", "DN"*/]) {
                 const text = new SpriteText(label, 0.05, "white");
                 text.material.sizeAttenuation = false;
                 text.name = label;
@@ -22,7 +22,7 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
         }
     }
 
-    let { positions, SOI } = orbit.getPointsOnOrbit(2048);
+    let { positions, SOI } = orbit.getPointsOnOrbit(4096);
     positions.map(x => x.multiplyScalar(Options.COORD_SCALE));
 
     line.geometry.setFromPoints(positions);
@@ -52,6 +52,7 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
             label.visible = false;
         }
 
+        /*
         // ascending node: f = omega
         let v = THREE.MathUtils.euclideanModulo(orbit.params.omega, 2 * Math.PI);
         label = line.getObjectByName("AN")!;
@@ -73,6 +74,7 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
         } else {
             label.visible = false;
         }
+        */
     }
 
     return line;
@@ -146,7 +148,7 @@ export function initPlanets(): THREE.Group {
     return planets;
 }
 
-window.addEventListener("mousemove", (event) => {
+window.addEventListener("mousemovee", (event) => {
     let camera = Options.globals.camera;
     let renderer = Options.globals.renderer;
     let scene = Options.globals.scene;

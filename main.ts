@@ -39,7 +39,7 @@ camera.position.copy(scene.getObjectByName("Earth")!.position.clone().add(new TH
 controls.target.copy(scene.getObjectByName("Earth")!.position);
 controls.update();
 
-updateOrbitRendering();
+//updateOrbitRendering();
 
 function animate() {
     controls.update();
