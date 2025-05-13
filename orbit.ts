@@ -195,9 +195,8 @@ export class Orbit {
             //axes fix
             //threejs: up y
             //here: up z
-            //-z to fix orientation issues
-            let position = new THREE.Vector3(info.position.x, -info.position.z, info.position.y);
-            let velocity = new THREE.Vector3(info.velocity.x, -info.velocity.z, info.velocity.y);
+            let position = new THREE.Vector3(info.position.x, info.position.z, info.position.y);
+            let velocity = new THREE.Vector3(info.velocity.x, info.velocity.z, info.velocity.y);
 
             //make sure inclination isnt 0
             if (velocity.z == 0) {
@@ -207,10 +206,11 @@ export class Orbit {
             const mu = Bodies[body].mu;
 
             // orbital momentum vector
-            const H = new THREE.Vector3().crossVectors(position, velocity);
+            // negate to preserve orientation
+            const H = new THREE.Vector3().crossVectors(position, velocity).negate();
 
             // eccentricity vector
-            const evec = new THREE.Vector3().crossVectors(velocity, H).divideScalar(mu).sub(position.clone().normalize());
+            const evec = new THREE.Vector3().crossVectors(velocity, H).negate().divideScalar(mu).sub(position.clone().normalize());
 
             // const vector pointing towards ascending node
             let N = new THREE.Vector3(-H.y, H.x, 0);
@@ -269,7 +269,7 @@ export class Orbit {
                 let vmin = -Math.PI + Math.acos(1 / e);
                 let vmax = Math.PI - Math.acos(1 / e);
                 if (!(vmin < v && v < vmax)) {
-                    return undefined;
+                    //console.error("v out of range");
                 }
 
                 r = a * (e * e - 1) / (1 + e * Math.cos(v));
@@ -313,7 +313,7 @@ export class Orbit {
         // transform to inertial frame
         const rotations = [
             new THREE.Euler(0, 0, -omega),
-            new THREE.Euler(i, 0, 0), // should be -i, but i works, only god knows why
+            new THREE.Euler(-i, 0, 0),
             new THREE.Euler(0, 0, -sigma)
         ];
 
@@ -321,8 +321,8 @@ export class Orbit {
         const Vprime = oprime.applyEuler(rotations[0]).applyEuler(rotations[1]).applyEuler(rotations[2]);
 
         // Threejs has up axis as y instead of z, im too lazy to go back and do everything the right way
-        const R = new THREE.Vector3(Rprime.x, -Rprime.z, Rprime.y);
-        const V = new THREE.Vector3(Vprime.x, -Vprime.z, Vprime.y);
+        const R = new THREE.Vector3(Rprime.x, Rprime.z, Rprime.y);
+        const V = new THREE.Vector3(Vprime.x, Vprime.z, Vprime.y);
 
         return { position: R, velocity: V, true_anomaly: v };
     }
