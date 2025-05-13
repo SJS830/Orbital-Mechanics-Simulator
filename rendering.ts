@@ -40,12 +40,12 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
 
         // perihelion: f = 0
         let label = line.getObjectByName("Pe")!;
-        label.position.copy(orbit.getPositionVelocity({ v: 0 }).position.multiplyScalar(Options.COORD_SCALE));
+        label.position.copy(orbit.getPositionVelocity({ f: 0 }).position.multiplyScalar(Options.COORD_SCALE));
 
         // aphelion: f = pi
         label = line.getObjectByName("Ap")!;
         if (vmin < Math.PI && Math.PI < vmax) {
-            label.position.copy(orbit.getPositionVelocity({ v: Math.PI }).position.multiplyScalar(Options.COORD_SCALE));
+            label.position.copy(orbit.getPositionVelocity({ f: Math.PI }).position.multiplyScalar(Options.COORD_SCALE));
 
             label.visible = (label.position.length() < SOI);
         } else {
@@ -53,10 +53,10 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
         }
 
         // ascending node: f = omega
-        let v = THREE.MathUtils.euclideanModulo(orbit.params.omega, 2 * Math.PI);
+        let v = THREE.MathUtils.euclideanModulo(orbit.params.AOP, 2 * Math.PI);
         label = line.getObjectByName("AN")!;
         if (vmin < v && v < vmax) {
-            label.position.copy(orbit.getPositionVelocity({ v }).position.multiplyScalar(Options.COORD_SCALE));
+            label.position.copy(orbit.getPositionVelocity({ f: v }).position.multiplyScalar(Options.COORD_SCALE));
 
             label.visible = (label.position.length() < SOI);
         } else {
@@ -64,10 +64,10 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
         }
 
         // descending node: f = omega + pi
-        v = THREE.MathUtils.euclideanModulo(orbit.params.omega + Math.PI, 2 * Math.PI);
+        v = THREE.MathUtils.euclideanModulo(orbit.params.AOP + Math.PI, 2 * Math.PI);
         label = line.getObjectByName("DN")!;
         if (vmin < v && v < vmax) {
-            label.position.copy(orbit.getPositionVelocity({ v }).position.multiplyScalar(Options.COORD_SCALE));
+            label.position.copy(orbit.getPositionVelocity({ f: v }).position.multiplyScalar(Options.COORD_SCALE));
 
             label.visible = (label.position.length() < SOI);
         } else {
