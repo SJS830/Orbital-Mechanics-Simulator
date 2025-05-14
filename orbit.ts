@@ -195,7 +195,6 @@ export function getSOI(body: string) {
 
     return SOI;
 }
-window.getSOI = getSOI;
 
 export class Orbit {
     body: string;
@@ -395,7 +394,13 @@ export class Orbit {
         return { position: R, velocity: V, true_anomaly: v };
     }
 
+    getPointsOnOrbitCached: {N: number, onlyInSphereOfInfluence: boolean, points: {positions: THREE.Vector3[], velocities: THREE.Vector3[], true_anomalies: number[], SOI?: number}}[] = [];
     getPointsOnOrbit(N: number = 2048, onlyInSphereOfInfluence = true) {
+        for (const cached of this.getPointsOnOrbitCached) {
+            if (cached.N == N && cached.onlyInSphereOfInfluence == onlyInSphereOfInfluence) {
+                return cached.points;
+            }
+        }
         const positions: THREE.Vector3[] = [];
         const velocities: THREE.Vector3[] = [];
         const true_anomalies: number[] = [];
@@ -405,8 +410,8 @@ export class Orbit {
         let vmin = 0; let vmax = 2 * Math.PI;
         if (params.e >= 1) {
             //orbital motion page 84
-            vmin = -Math.PI + Math.acos(1 / params.e) + .01;
-            vmax = Math.PI - Math.acos(1 / params.e) - .01;
+            vmin = -Math.PI + Math.acos(1 / params.e) + .0001;
+            vmax = Math.PI - Math.acos(1 / params.e) - .0001;
         }
 
         let SOI = getSOI(body);
@@ -422,6 +427,7 @@ export class Orbit {
         }
 
         //console.log({vmin, vmax, positions});
+        this.getPointsOnOrbitCached.push({ N, onlyInSphereOfInfluence, points: { positions, velocities, true_anomalies, SOI } });
         return { positions, velocities, true_anomalies, SOI };
     }
 
@@ -461,20 +467,7 @@ export class Orbit {
             let [closestBody, closestBodyInfo] = Object.entries(bodyPositions).filter(x => {
                 let [body, pos] = x;
 
-                if (pos.position.clone().sub(rocketPosAbs).length() < getSOI(body)) {
-                    /*console.log({
-                        time: t,
-                        body: body,
-                        SOI: getSOI(body),
-                        distance: pos.position.clone().sub(rocketPosAbs).length(),
-                        params: this.params
-                    });
-                    console.log({rocketPos});*/
-
-                    return true;
-                }
-
-                return false;
+                return (pos.position.clone().sub(rocketPosAbs).length() < getSOI(body));
             }).sort((a, b) => getSOI(a[0]) - getSOI(b[0]))[0];
 
             if (closestBody == thisRef.body) {
@@ -487,7 +480,8 @@ export class Orbit {
                 escapePositionNew: rocketPosAbs.clone().sub(closestBodyInfo.position),
                 escapeVelocityLocal: rocketVel,
                 escapeVelocityNew: rocketVelAbs.clone().sub(closestBodyInfo.velocity),
-                newBody: closestBody
+                newBody: closestBody,
+                oldBody: thisRef.body
             };
         }
 
@@ -536,27 +530,23 @@ for (const [name, info] of Object.entries(Bodies)) {
 }
 
 export function getBodyPositions(time: number) {
-    const positions: { [key: string]: { position: THREE.Vector3, velocity: THREE.Vector3 } } = {};
+    const states: { [key: string]: { position: THREE.Vector3, velocity: THREE.Vector3 } } = {};
     time = 0;
 
     for (let body of Object.keys(Bodies)) {
         let orbit = BodiesOrbits[body];
-        positions[body] = orbit.getPositionVelocity({ t: time });
+        states[body] = orbit.getPositionVelocity({ t: time });
 
         let parent = Bodies[body].parentBody;
         while (parent) {
-            let grandparent = Bodies[parent].parentBody;
-            if (!grandparent) {
-                break;
-            }
+            let parentState = BodiesOrbits[parent].getPositionVelocity({ t: time });
 
-            let parentInfo = new Orbit(grandparent, { params: Bodies[parent].params }).getPositionVelocity({ t: time });
-            positions[body].position.add(parentInfo.position);
-            positions[body].velocity.add(parentInfo.velocity);
+            states[body].position.add(parentState.position)
+            states[body].velocity.add(parentState.velocity)
 
             parent = Bodies[parent].parentBody;
         }
     }
 
-    return positions;
+    return states;
 }

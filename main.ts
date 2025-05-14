@@ -1,10 +1,13 @@
+// Dear Dr. Farr,
+// I don't know if you're going to read this, but please know that this is some of the worst code I have ever written and I'm not proud of it.
+
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 import * as Orbits from './orbit.ts';
 import * as Options from './options.ts';
 import * as Rendering from './rendering.ts';
-import { updateOrbitRendering } from './controls.ts';
+import { updateOrbitRendering, annotations } from './controls.ts';
 
 const scene = new THREE.Scene();
 Options.globals.scene = scene;
@@ -39,12 +42,16 @@ camera.position.copy(scene.getObjectByName("Earth")!.position.clone().add(new TH
 controls.target.copy(scene.getObjectByName("Earth")!.position);
 controls.update();
 
-//updateOrbitRendering();
+updateOrbitRendering();
 
 function animate() {
     controls.update();
 
     renderer.render(scene, camera);
+    
+    for (const annotation of annotations.annotations) {
+        annotation.update();
+    }
 }
 
 renderer.setAnimationLoop(animate);

@@ -1,8 +1,24 @@
 import * as THREE from 'three';
-import { Bodies, Orbit } from './orbit';
+import { Bodies, getBodyPositions, Orbit, getSOI } from './orbit';
 import * as Options from './options';
 import SpriteText from 'three-spritetext';
 import { states } from "./controls";
+
+function numPointsOnOrbit(orbit: Orbit) {
+    let numPoints;
+    if (orbit.params.e < 1) {
+        numPoints = orbit.params.a / 20000 /* calculated so that initial orbit has 256 points */
+    } else {
+        let soi = getSOI(orbit.body);
+        if (soi == Infinity) {
+            numPoints = 10000;
+        } else {
+            numPoints = soi / 20000;
+        }
+    }
+
+    return Math.ceil(Math.max(Math.min(numPoints, 16384 * 2), 512));
+}
 
 export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean = true): THREE.Line {
     if (!line) {
@@ -22,7 +38,7 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
         }
     }
 
-    let { positions, SOI } = orbit.getPointsOnOrbit(4096);
+    let { positions, SOI } = orbit.getPointsOnOrbit(Math.min(numPointsOnOrbit(orbit), 8192));
     positions.map(x => x.multiplyScalar(Options.COORD_SCALE));
 
     line.geometry.setFromPoints(positions);
@@ -148,7 +164,9 @@ export function initPlanets(): THREE.Group {
     return planets;
 }
 
-window.addEventListener("mousemovee", (event) => {
+window.addEventListener("mousemove", (event) => {
+    //console.log("checkpoint -1");
+
     let camera = Options.globals.camera;
     let renderer = Options.globals.renderer;
     let scene = Options.globals.scene;
@@ -158,37 +176,96 @@ window.addEventListener("mousemovee", (event) => {
 
     let mousePos = new THREE.Vector2(event.clientX / renderer.domElement.width, event.clientY / renderer.domElement.height).multiplyScalar(2).subScalar(1).multiply(new THREE.Vector2(1, -1));
 
+    //console.log("checkpount -0.5");
+
     let minIndex = -1;
     let minDistance = Infinity;
+    let minBody, minPosition;
 
-    let lastOrbit = states[states.length - 1];
-    let {positions, velocities} = lastOrbit.getPointsOnOrbit(2048, true);
+    //console.log({states});
+    
 
-    for (let i = 0; i < positions.length; i++) {
-        const point3d = positions[i].clone();
+    let validStates;
+    if (states.length == 1) {
+        validStates = [states[0]];
+    } else {
+        let i = states.length - 1;
+        while (states[i] && states[i].cause && states[i].cause!.type != "maneuver") {
+            i--;
+        }
 
-        let body = scene.getObjectByName(lastOrbit.body);
+        validStates = states.slice(Math.max(0, i - 1));
+    }
+
+    //console.log("checkpount -0.25");
+    //console.log({validStates});
+
+    function tryy(positions, state, i) {
+        let point3d = positions[i].clone().multiplyScalar(Options.COORD_SCALE);
+
+        let body = scene!.getObjectByName(state.orbit.body);
         if (body) {
-            point3d.add(body.position.clone().divideScalar(Options.COORD_SCALE));
+            point3d.add(body.position);
             body.traverseAncestors((obj) => {
-                point3d.add(obj.position.clone().divideScalar(Options.COORD_SCALE));
+                point3d.add(obj.position);
             });
         }
-        point3d.multiplyScalar(Options.COORD_SCALE).project(camera);
 
-        const point = new THREE.Vector2(point3d.x, point3d.y);
+        let point3dProjected = point3d.clone().project(camera);
+
+        const point = new THREE.Vector2(point3dProjected.x, point3dProjected.y);
         const distance = point.distanceTo(mousePos);
 
         if (distance < minDistance) {
             minIndex = i;
-            minDistance = distance
+            minDistance = distance;
+            minPosition = positions[i];
+            minBody = state.orbit.body;
+            point3dMin = point3d.clone();
         }
+
+        return distance;
     }
 
-    scene.getObjectByName(lastOrbit.body)?.attach(scene.getObjectByName("orbitHoverMarker")!);
-    scene.getObjectByName("orbitHoverMarker")?.position.copy(positions[minIndex].clone().multiplyScalar(Options.COORD_SCALE));
-    //console.log(latestOrbitPoints[minIndex]);
-    //console.log(scene.getObjectByName("orbitHoverMarker")?.position);
-    //console.log(scene.getObjectByName("orbitHoverMarker")?.parent);
-    //console.log({ minIndex, minDistance });
+    //console.log("checkpoint 0");
+
+    let point3dMin;
+    for (const state of validStates) {
+        let numPoints = 2048;//numPointsOnOrbit(state.orbit);
+
+        let { positions, velocities } = state.orbit.getPointsOnOrbit(numPoints + 1, true);
+
+        //console.log("checkpoint 1");
+        let jump = Math.ceil(positions.length / 2048);
+
+        let minDistLocal = Infinity;
+        let minIlocal = -1;
+        
+        for (let i = 0; i < positions.length; i += jump) {
+            let dist = tryy(positions, state, i);
+
+            if (dist < minDistLocal) {
+                minDistLocal = dist;
+                minIlocal = i;
+            }
+        }
+        //console.log("checkpoint 2");
+
+        for (let i = minIlocal - jump; i < minIlocal + jump; i++) {
+            let j = THREE.MathUtils.euclideanModulo(i, positions.length);
+            tryy(positions, state, j);
+        }
+        //console.log("checkpoint 3");
+    }
+    //console.log("checkpoint 4");
+
+    let scale = point3dMin.clone().sub(camera.position).length() / 5;
+    scene.getObjectByName(minBody)?.attach(scene.getObjectByName("orbitHoverMarker")!);
+    scene.getObjectByName("orbitHoverMarker")?.position.copy(minPosition.clone().multiplyScalar(Options.COORD_SCALE));
+    scene.getObjectByName("orbitHoverMarker")?.scale.copy(new THREE.Vector3(scale, scale, scale));
+    //console.log("checkpoint 5");
+    ////console.log(latestOrbitPoints[minIndex]);
+    ////console.log(scene.getObjectByName("orbitHoverMarker")?.position);
+    ////console.log(scene.getObjectByName("orbitHoverMarker")?.parent);
+    ////console.log({ minIndex, minDistance });
 });

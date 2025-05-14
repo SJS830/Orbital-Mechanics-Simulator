@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Orbit, Bodies, BodiesOrbits, getBodyPositions } from './orbit.ts';
 import { globals, COORD_SCALE } from './options.ts';
 import * as Rendering from './rendering.ts';
-
+import { Annotation } from "./annotation.ts";
 import GUI from 'lil-gui';
 
 const initialState = new Orbit("Earth", { position: new THREE.Vector3(1e7, 0, 0), velocity: new THREE.Vector3(0, 0, 6400), time: 0 });
@@ -12,9 +12,9 @@ const initialState = new Orbit("Earth", { position: new THREE.Vector3(1e7, 0, 0)
 // time: time in orbit before maneuver (max 1 period)
 // oribts: + how many full orbits
 const maneuvers: { time: number; orbits: number; prograde: number; normal: number; radialout: number; }[] = [];
-export let states: { tstart: number, orbit: Orbit }[] = [{ tstart: 0, state: initialState }];
+export let states: { tstart: number, orbit: Orbit, cause?: { type: "maneuver"; maneuverNumber: number; maneuverPosition: THREE.Vector3 } | { type: "escape"; escapeInfo: { escapeTime: number; newBody: string; oldBody: string; escapePosition: THREE.Vector3 } } }[] = [{ tstart: 0, orbit: initialState }];
 
-window["getStates"] = () => {return states};
+window["getStates"] = () => { return states };
 
 export function recalculateOrbits() {
     states = [{ tstart: 0, orbit: initialState }];
@@ -28,7 +28,7 @@ export function recalculateOrbits() {
             if (escapeInfo !== undefined) {
                 //globals.DEBUG_PRINT = true;
                 let stateAtEscape = state.orbit.getPositionVelocity({ t: escapeInfo.escapeTime });
-                console.log({ stateAtEscape, escapeInfo });
+                //console.log({ stateAtEscape, escapeInfo });
                 //globals.DEBUG_PRINT = false;
                 let oldbody = state.orbit.body;
                 let newbody = escapeInfo.newBody;
@@ -36,14 +36,26 @@ export function recalculateOrbits() {
                 let bodyPositions = getBodyPositions(escapeInfo.escapeTime);
 
                 let relativePositionPlanets = bodyPositions[oldbody].position.clone().sub(bodyPositions[newbody].position);
+                let relativeVelocityPlanets = bodyPositions[oldbody].velocity.clone().sub(bodyPositions[newbody].velocity);
 
                 states.push({
                     tstart: escapeInfo.escapeTime,
                     orbit: new Orbit(
                         escapeInfo.newBody, {
-                        position: stateAtEscape.position.clone().add(relativePositionPlanets),
-                        velocity: /*stateAtEscape.velocity.add(oldbodystate.velocity).sub(newbodystate.velocity*/ new THREE.Vector3(1000, 1000, 1000), time: escapeInfo.escapeTime
-                    })
+                            position: stateAtEscape.position.clone().add(relativePositionPlanets),
+                            velocity: stateAtEscape.velocity.clone().add(relativeVelocityPlanets)/*.negate()*/,
+                            time: escapeInfo.escapeTime
+                        }
+                    ),
+                    cause: {
+                        type: "escape",
+                        escapeInfo: {
+                            escapeTime: escapeInfo.escapeTime,
+                            oldBody: oldbody,
+                            newBody: newbody,
+                            escapePosition: stateAtEscape.position.clone().add(bodyPositions[oldbody].position)
+                        }
+                    }
                 });
 
                 continue;
@@ -63,7 +75,7 @@ export function recalculateOrbits() {
             maneuverTimeAbs += maneuvers[j].time; /* + orbits whatever*/;
         }
 
-        states = states.filter(({tstart, orbit}) => tstart < maneuverTimeAbs);
+        states = states.filter(({ tstart, orbit }) => tstart < maneuverTimeAbs);
         let state = states[states.length - 1];
 
         let { tstart, orbit } = state;
@@ -77,10 +89,16 @@ export function recalculateOrbits() {
         states.push({
             tstart: maneuverTimeAbs,
             orbit: new Orbit(orbit.body, {
-                position, velocity: velocity.add(cartesianManeuver).negate(), /* no idea why but this makes the orientation right */
-                time: maneuverTimeAbs
+                    position, velocity: velocity.add(cartesianManeuver).negate(), /* no idea why but this makes the orientation right */
+                    time: maneuverTimeAbs
+                }
+            ),
+            cause: {
+                type: "maneuver",
+                maneuverNumber: i,
+                maneuverPosition: position.clone().add(getBodyPositions(maneuverTimeAbs)[orbit.body].position)
             }
-        )});
+        });
 
         calculateProgression();
     }
@@ -117,11 +135,12 @@ export function recalculateOrbits() {
         //console.log({cartesianManeuver, position, velocity});
 
         states.push(new Orbit(state.body, { position, velocity: velocity.add(cartesianManeuver).negate() /* no idea why but this makes the orientation right *//*, time: absTime }));
-    }
-    */
+}
+*/
 }
 
 let Z = 0; //kill me now please
+export const annotations: { annotations: Annotation[] } = { annotations: [] };
 export function updateOrbitRendering() {
     if (!globals.scene) {
         return;
@@ -147,6 +166,32 @@ export function updateOrbitRendering() {
         line.material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
         globals.scene.getObjectByName(orbit.body)?.add(line);
     }
+
+    for (const annotation of annotations.annotations) {
+        annotation.destroy();
+    }
+
+    annotations.annotations = [];
+
+    for (const state of states) {
+        if (!state.cause) {
+            continue;
+        }
+
+        if (state.cause.type == "maneuver") {
+            let ele = document.createElement("span");
+            ele.innerHTML = "<p style='color: white'>maneuver</p>";
+
+            annotations.annotations.push(new Annotation(state.cause.maneuverPosition.clone().multiplyScalar(COORD_SCALE), ele));
+        } else if (state.cause.type == "escape") {
+            let ele = document.createElement("span");
+            ele.innerHTML = "<p style='color: white'>escape</p>";
+
+            annotations.annotations.push(new Annotation(state.cause.escapeInfo.escapePosition.clone().multiplyScalar(COORD_SCALE), ele));
+        }
+    }
+
+    console.log({states,annotations});
 }
 
 const gui = new GUI();
@@ -156,7 +201,7 @@ gui.add({
         let maneuver = maneuvers[maneuvers.length - 1];
         let currentState = states[maneuvers.length - 1] || states[0];
 
-        const folder = gui.addFolder(`Maneuver ${maneuvers.length}`).onChange(() => { recalculateOrbits(); updateOrbitRendering()});
+        const folder = gui.addFolder(`Maneuver ${maneuvers.length}`).onChange(() => { recalculateOrbits(); updateOrbitRendering() });
         folder.add(maneuver, "time", 1, 10000 /*(currentState.orbit.getEscapeInfo(currentState.tstart)?.escapeTime - currentState.tstart) || currentState.orbit.getPeriod()*/).name("Time to Maneuver");
         folder.add(maneuver, "orbits", 0, 10, 1).name("Number of Orbits");
         folder.add(maneuver, "prograde", -10000, 10000).name("Prograde Velocity Change");
