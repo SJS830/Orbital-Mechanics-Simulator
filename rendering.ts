@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { Bodies, getBodyPositions, Orbit, getSOI } from './orbit';
 import * as Options from './options';
 import SpriteText from 'three-spritetext';
-import { states } from "./controls";
+import { getCamera, getRenderer, getScene } from "./graphics";
+import { Annotation } from "./annotation";
+import { COORD_SCALE } from "./options";
+import { getStatesList } from "./mechanics";
 
 function numPointsOnOrbit(orbit: Orbit) {
     let numPoints;
@@ -20,7 +23,7 @@ function numPointsOnOrbit(orbit: Orbit) {
     return Math.ceil(Math.max(Math.min(numPoints, 16384 * 2), 512));
 }
 
-export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean = true): THREE.Line {
+export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean = true, timerange?: { min: number; max: number; }): THREE.Line {
     if (!line) {
         const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
         const geometry = new THREE.BufferGeometry();
@@ -38,7 +41,7 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
         }
     }
 
-    let { positions, SOI } = orbit.getPointsOnOrbit(Math.min(numPointsOnOrbit(orbit), 8192));
+    let { positions, SOI } = orbit.getPointsOnOrbit(Math.min(numPointsOnOrbit(orbit), 8192), true, timerange);
     positions.map(x => x.multiplyScalar(Options.COORD_SCALE));
 
     line.geometry.setFromPoints(positions);
@@ -94,6 +97,64 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
     }
 
     return line;
+}
+
+let Z = 0; //kill me now please
+export const annotations: { annotations: Annotation[] } = { annotations: [] };
+export function updateOrbitRendering(statesList) {
+    const scene = getScene();
+
+    let rocketOrbit;
+    while ((rocketOrbit = scene.getObjectByName("rocketOrbit"))) {
+        rocketOrbit.material.dispose();
+        rocketOrbit.geometry.dispose();
+        rocketOrbit.parent.remove(rocketOrbit);
+    }
+
+    let maneuverNode;
+    while ((maneuverNode = scene.getObjectByName(`maneuverNode${Z - 1}`))) {
+        //maneuverNode.dispose();
+        maneuverNode.parent.remove(maneuverNode);
+    }
+    Z += 1;
+
+    for (let i = 0; i < statesList.length; i++) {
+        const { orbit } = statesList[i]
+
+        let timerange;
+        if (i + 1 < statesList.length) {
+            timerange = { min: statesList[i].tstart, max: statesList[i + 1].tstart };
+        }
+
+        let line = renderOrbit(orbit, undefined, true, timerange);
+        line.name = "rocketOrbit";
+        line.material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+        scene.getObjectByName(orbit.body)?.add(line);
+    }
+
+    for (const annotation of annotations.annotations) {
+        annotation.destroy();
+    }
+
+    annotations.annotations = [];
+
+    for (const state of statesList) {
+        if (!state.cause) {
+            continue;
+        }
+
+        if (state.cause.type == "maneuver") {
+            let ele = document.createElement("span");
+            ele.innerHTML = "<p style='color: white'>maneuver</p>";
+
+            annotations.annotations.push(new Annotation(state.cause.maneuverPosition.clone().multiplyScalar(COORD_SCALE), ele));
+        } else if (state.cause.type == "escape") {
+            let ele = document.createElement("span");
+            ele.innerHTML = "<p style='color: white'>escape</p>";
+
+            annotations.annotations.push(new Annotation(state.cause.escapeInfo.escapePosition.clone().multiplyScalar(COORD_SCALE), ele));
+        }
+    }
 }
 
 function createPlanetMesh(info: { radius: number; texture: string; name: string; }): THREE.Mesh {
@@ -165,14 +226,11 @@ export function initPlanets(): THREE.Group {
 }
 
 window.addEventListener("mousemove", (event) => {
-    //console.log("checkpoint -1");
+    let camera = getCamera();
+    let renderer = getRenderer();
+    let scene = getScene();
 
-    let camera = Options.globals.camera;
-    let renderer = Options.globals.renderer;
-    let scene = Options.globals.scene;
-    if (!camera || !renderer || !scene) {
-        return;
-    }
+    const states = getStatesList();
 
     let mousePos = new THREE.Vector2(event.clientX / renderer.domElement.width, event.clientY / renderer.domElement.height).multiplyScalar(2).subScalar(1).multiply(new THREE.Vector2(1, -1));
 
@@ -181,9 +239,6 @@ window.addEventListener("mousemove", (event) => {
     let minIndex = -1;
     let minDistance = Infinity;
     let minBody, minPosition;
-
-    //console.log({states});
-    
 
     let validStates;
     if (states.length == 1) {
@@ -230,10 +285,16 @@ window.addEventListener("mousemove", (event) => {
     //console.log("checkpoint 0");
 
     let point3dMin;
-    for (const state of validStates) {
+    for (let i = 0; i < validStates.length; i++) {
+        const state = validStates[i];
+
         let numPoints = 2048;//numPointsOnOrbit(state.orbit);
 
-        let { positions, velocities } = state.orbit.getPointsOnOrbit(numPoints + 1, true);
+        let timerange;
+        if (i + 1 < validStates.length) {
+            timerange = { min: validStates[i].tstart, max: validStates[i + 1].tstart };
+        }
+        let { positions, velocities } = state.orbit.getPointsOnOrbit(numPoints + 1, true, timerange);
 
         //console.log("checkpoint 1");
         let jump = Math.ceil(positions.length / 2048);

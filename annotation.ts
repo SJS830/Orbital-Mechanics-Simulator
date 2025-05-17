@@ -1,5 +1,16 @@
-import { globals } from "./options";
 import * as THREE from "three";
+import { getCamera, getRenderer } from "./graphics";
+
+const annotations: {[key: string]: Annotation} = {};
+export function getAnnotations() {
+    return annotations;
+}
+
+export function updateAnnotations() {
+    for (const [key, annotation] of Object.entries(getAnnotations())) {
+        annotation.update();
+    }
+}
 
 // https://manu.ninja/webgl-three-js-annotations/
 export class Annotation {
@@ -14,6 +25,8 @@ export class Annotation {
         element.style.position = "absolute";
 
         this.update(position);
+
+        annotations[this.htmlID] = this;
     }
 
     update(position?: THREE.Vector3) {
@@ -21,11 +34,11 @@ export class Annotation {
             this.position = position;
         }
 
-        const canvas = globals.renderer!.domElement;
+        const canvas = getRenderer().domElement;
 
-        let vector = this.position.clone().project(globals.camera!);
+        let vector = this.position.clone().project(getCamera());
 
-        //    let mousePos = new THREE.Vector2(event.clientX / renderer.domElement.width, event.clientY / renderer.domElement.height).multiplyScalar(2).subScalar(1).multiply(new THREE.Vector2(1, -1));
+        // let mousePos = new THREE.Vector2(event.clientX / renderer.domElement.width, event.clientY / renderer.domElement.height).multiplyScalar(2).subScalar(1).multiply(new THREE.Vector2(1, -1));
 
         vector.x = Math.round((0.5 + vector.x / 2) * (canvas.width));
         vector.y = Math.round((0.5 - vector.y / 2) * (canvas.height));

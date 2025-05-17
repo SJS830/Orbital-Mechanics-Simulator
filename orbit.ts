@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { transformWithEsbuild } from "vite";
-import {globals} from "./options";
 
 export const Bodies: {[key: string] : {name: string; parentBody?: string; radius: number; mu: number; texture: string, params: OrbitParams}} = {
     "Sun": {
@@ -394,13 +392,13 @@ export class Orbit {
         return { position: R, velocity: V, true_anomaly: v };
     }
 
-    getPointsOnOrbitCached: {N: number, onlyInSphereOfInfluence: boolean, points: {positions: THREE.Vector3[], velocities: THREE.Vector3[], true_anomalies: number[], SOI?: number}}[] = [];
-    getPointsOnOrbit(N: number = 2048, onlyInSphereOfInfluence = true) {
-        for (const cached of this.getPointsOnOrbitCached) {
-            if (cached.N == N && cached.onlyInSphereOfInfluence == onlyInSphereOfInfluence) {
-                return cached.points;
-            }
+    getPointsOnOrbitCached: {[key: string]: {positions: THREE.Vector3[], velocities: THREE.Vector3[], true_anomalies: number[], SOI: number}} = {};
+    getPointsOnOrbit(N: number = 2048, onlyInSphereOfInfluence = true, timerange?: {min: number; max: number;}) {
+        let stringifiedArgs = JSON.stringify({ N, onlyInSphereOfInfluence, timerange });
+        if (this.getPointsOnOrbitCached[stringifiedArgs]) {
+            return this.getPointsOnOrbitCached[stringifiedArgs];
         }
+
         const positions: THREE.Vector3[] = [];
         const velocities: THREE.Vector3[] = [];
         const true_anomalies: number[] = [];
@@ -408,12 +406,19 @@ export class Orbit {
         let { body, params } = this;
 
         let vmin = 0; let vmax = 2 * Math.PI;
-        if (params.e >= 1) {
-            //orbital motion page 84
-            vmin = -Math.PI + Math.acos(1 / params.e) + .0001;
-            vmax = Math.PI - Math.acos(1 / params.e) - .0001;
+        if (timerange) {
+            if (this.params.e >= 1 || timerange.max - timerange.min < this.getPeriod()) {
+                vmin = this.getPositionVelocity({ t: timerange.min }).true_anomaly;
+                vmax = this.getPositionVelocity({ t: timerange.max }).true_anomaly;
+            }
+        } else {
+            if (params.e >= 1) {
+                //orbital motion page 84
+                vmin = -Math.PI + Math.acos(1 / params.e) + .0001;
+                vmax = Math.PI - Math.acos(1 / params.e) - .0001;
+            }
         }
-
+   
         let SOI = getSOI(body);
 
         for (let v = vmin; v <= vmax + .0001 /* floating point error */; v += (vmax - vmin) / N) {
@@ -427,7 +432,7 @@ export class Orbit {
         }
 
         //console.log({vmin, vmax, positions});
-        this.getPointsOnOrbitCached.push({ N, onlyInSphereOfInfluence, points: { positions, velocities, true_anomalies, SOI } });
+        this.getPointsOnOrbitCached[stringifiedArgs] = { positions, velocities, true_anomalies, SOI };
         return { positions, velocities, true_anomalies, SOI };
     }
 

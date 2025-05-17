@@ -1,244 +1,115 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
-import { Orbit, Bodies, BodiesOrbits, getBodyPositions } from './orbit.ts';
-import { globals, COORD_SCALE } from './options.ts';
-import * as Rendering from './rendering.ts';
-import { Annotation } from "./annotation.ts";
 import GUI from 'lil-gui';
+import { getCamera, getRenderer, getScene } from "./graphics";
+import { COORD_SCALE } from "./options";
+import { updateOrbitRendering } from "./rendering";
+import { getManeuvers, getStateAtTime, recalculateOrbits } from "./mechanics";
+import { updateAnnotations } from "./annotation";
 
-const initialState = new Orbit("Earth", { position: new THREE.Vector3(1e7, 0, 0), velocity: new THREE.Vector3(0, 0, 6400), time: 0 });
-
-// time: time in orbit before maneuver (max 1 period)
-// oribts: + how many full orbits
-const maneuvers: { time: number; orbits: number; prograde: number; normal: number; radialout: number; }[] = [];
-export let states: { tstart: number, orbit: Orbit, cause?: { type: "maneuver"; maneuverNumber: number; maneuverPosition: THREE.Vector3 } | { type: "escape"; escapeInfo: { escapeTime: number; newBody: string; oldBody: string; escapePosition: THREE.Vector3 } } }[] = [{ tstart: 0, orbit: initialState }];
-
-window["getStates"] = () => { return states };
-
-export function recalculateOrbits() {
-    states = [{ tstart: 0, orbit: initialState }];
-
-    function calculateProgression() {
-        for (let k = 0; k < 3; k++) {
-            let state = states[states.length - 1]
-            let escapeInfo = state.orbit.getEscapeInfo(state.tstart);
-
-            //todo: make orbit time adding impossible if on escape traj
-            if (escapeInfo !== undefined) {
-                //globals.DEBUG_PRINT = true;
-                let stateAtEscape = state.orbit.getPositionVelocity({ t: escapeInfo.escapeTime });
-                //console.log({ stateAtEscape, escapeInfo });
-                //globals.DEBUG_PRINT = false;
-                let oldbody = state.orbit.body;
-                let newbody = escapeInfo.newBody;
-
-                let bodyPositions = getBodyPositions(escapeInfo.escapeTime);
-
-                let relativePositionPlanets = bodyPositions[oldbody].position.clone().sub(bodyPositions[newbody].position);
-                let relativeVelocityPlanets = bodyPositions[oldbody].velocity.clone().sub(bodyPositions[newbody].velocity);
-
-                states.push({
-                    tstart: escapeInfo.escapeTime,
-                    orbit: new Orbit(
-                        escapeInfo.newBody, {
-                            position: stateAtEscape.position.clone().add(relativePositionPlanets),
-                            velocity: stateAtEscape.velocity.clone().add(relativeVelocityPlanets)/*.negate()*/,
-                            time: escapeInfo.escapeTime
-                        }
-                    ),
-                    cause: {
-                        type: "escape",
-                        escapeInfo: {
-                            escapeTime: escapeInfo.escapeTime,
-                            oldBody: oldbody,
-                            newBody: newbody,
-                            escapePosition: stateAtEscape.position.clone().add(bodyPositions[oldbody].position)
-                        }
-                    }
-                });
-
-                continue;
-            } else {
-                break;
-            }
-        }
-    }
-
-    calculateProgression();
-
-    for (let i = 0; i < maneuvers.length; i++) {
-        let maneuver = maneuvers[i];
-        let maneuverTimeAbs = 0;
-
-        for (let j = 0; j <= i; j++) {
-            maneuverTimeAbs += maneuvers[j].time; /* + orbits whatever*/;
-        }
-
-        states = states.filter(({ tstart, orbit }) => tstart < maneuverTimeAbs);
-        let state = states[states.length - 1];
-
-        let { tstart, orbit } = state;
-
-        let { position, velocity } = orbit.getPositionVelocity({ t: maneuverTimeAbs });
-
-        let cartesianManeuver = velocity.clone().normalize().multiplyScalar(maneuver.prograde);
-        cartesianManeuver.add(position.clone().normalize().multiplyScalar(maneuver.radialout));
-        cartesianManeuver.add(position.clone().cross(velocity).normalize().multiplyScalar(maneuver.normal));
-
-        states.push({
-            tstart: maneuverTimeAbs,
-            orbit: new Orbit(orbit.body, {
-                    position, velocity: velocity.add(cartesianManeuver).negate(), /* no idea why but this makes the orientation right */
-                    time: maneuverTimeAbs
-                }
-            ),
-            cause: {
-                type: "maneuver",
-                maneuverNumber: i,
-                maneuverPosition: position.clone().add(getBodyPositions(maneuverTimeAbs)[orbit.body].position)
-            }
-        });
-
-        calculateProgression();
-    }
-
-    console.log(states);
-
-    /*let j = 0;
-    for (let i = 0; i < maneuvers.length; i++) {
-        let maneuver = maneuvers[i];
-        let state = states[j];
-
-        console.log({ absTime });
-        let escapeInfo = state.getEscapeInfo(absTime);
-        console.log({ escapeInfo });
-
-        //todo: make orbit time adding impossible if on escape traj
-        if (escapeInfo !== undefined) {
-            if (escapeInfo.escapeTime < absTime + maneuver.time) {
-                states.push(new Orbit(escapeInfo.newBody, { position: escapeInfo.escapePositionNew, velocity: escapeInfo.escapeVelocityNew, time: escapeInfo.escapeTime }));
-
-                i--;
-                continue;
-            }
-        }
-
-        absTime += maneuver.time //+ maneuver.orbits * state.getPeriod();
-
-        let { position, velocity } = state.getPositionVelocity({ t: absTime });
-
-        let cartesianManeuver = velocity.clone().normalize().multiplyScalar(maneuver.prograde);
-        cartesianManeuver.add(position.clone().normalize().multiplyScalar(maneuver.radialout));
-        cartesianManeuver.add(position.clone().cross(velocity).normalize().multiplyScalar(maneuver.normal));
-
-        //console.log({cartesianManeuver, position, velocity});
-
-        states.push(new Orbit(state.body, { position, velocity: velocity.add(cartesianManeuver).negate() /* no idea why but this makes the orientation right *//*, time: absTime }));
+const displayTime = {
+    minutes: 0,
+    hours: 0,
+    days: 0,
+    years: 0
 }
-*/
-}
+function updateDisplayTime() {
+    let scene = getScene();
 
-let Z = 0; //kill me now please
-export const annotations: { annotations: Annotation[] } = { annotations: [] };
-export function updateOrbitRendering() {
-    if (!globals.scene) {
-        return;
-    }
+    const time = displayTime.minutes * 60 + displayTime.hours * 3600 + displayTime.days * 3600 * 24 + displayTime.years * 3600 * 24 * 365;
 
-    let rocketOrbit;
-    while ((rocketOrbit = globals.scene.getObjectByName("rocketOrbit"))) {
-        rocketOrbit.material.dispose();
-        rocketOrbit.geometry.dispose();
-        rocketOrbit.parent.remove(rocketOrbit);
-    }
-
-    let maneuverNode;
-    while ((maneuverNode = globals.scene.getObjectByName(`maneuverNode${Z - 1}`))) {
-        //maneuverNode.dispose();
-        maneuverNode.parent.remove(maneuverNode);
-    }
-    Z += 1;
-
-    for (const { orbit } of states) {
-        let line = Rendering.renderOrbit(orbit, undefined, true);
-        line.name = "rocketOrbit";
-        line.material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-        globals.scene.getObjectByName(orbit.body)?.add(line);
-    }
-
-    for (const annotation of annotations.annotations) {
-        annotation.destroy();
-    }
-
-    annotations.annotations = [];
-
-    for (const state of states) {
-        if (!state.cause) {
-            continue;
-        }
-
-        if (state.cause.type == "maneuver") {
-            let ele = document.createElement("span");
-            ele.innerHTML = "<p style='color: white'>maneuver</p>";
-
-            annotations.annotations.push(new Annotation(state.cause.maneuverPosition.clone().multiplyScalar(COORD_SCALE), ele));
-        } else if (state.cause.type == "escape") {
-            let ele = document.createElement("span");
-            ele.innerHTML = "<p style='color: white'>escape</p>";
-
-            annotations.annotations.push(new Annotation(state.cause.escapeInfo.escapePosition.clone().multiplyScalar(COORD_SCALE), ele));
-        }
-    }
-
-    console.log({states,annotations});
-}
-
-const gui = new GUI();
-gui.add({
-    addManeuver: () => {
-        maneuvers.push({ time: 100, orbits: 0, prograde: 0, normal: 0, radialout: 0 })
-        let maneuver = maneuvers[maneuvers.length - 1];
-        let currentState = states[maneuvers.length - 1] || states[0];
-
-        const folder = gui.addFolder(`Maneuver ${maneuvers.length}`).onChange(() => { recalculateOrbits(); updateOrbitRendering() });
-        folder.add(maneuver, "time", 1, 10000 /*(currentState.orbit.getEscapeInfo(currentState.tstart)?.escapeTime - currentState.tstart) || currentState.orbit.getPeriod()*/).name("Time to Maneuver");
-        folder.add(maneuver, "orbits", 0, 10, 1).name("Number of Orbits");
-        folder.add(maneuver, "prograde", -10000, 10000).name("Prograde Velocity Change");
-        folder.add(maneuver, "normal", -10000, 10000).name("Normal Velocity Change");
-        folder.add(maneuver, "radialout", -10000, 10000).name("Radial Velocity Change");
-    }
-}, "addManeuver").name("Add Maneuver");
-
-/*
-const gui = new GUI();
-
-const posFolder = gui.addFolder("Rocket Position");
-posFolder.add(rocket.R, 'x', -1e7, 1e7).onChange(updateOrbitRendering);
-posFolder.add(rocket.R, 'y', -1e7, 1e7).onChange(updateOrbitRendering);
-posFolder.add(rocket.R, 'z', -1e7, 1e7).onChange(updateOrbitRendering);
-posFolder.open();
-
-const velFolder = gui.addFolder("Rocket Velocity");
-velFolder.add(rocket.V, 'x', -10000, 10000).onChange(updateOrbitRendering);
-velFolder.add(rocket.V, 'y', -10000, 10000).onChange(updateOrbitRendering);
-velFolder.add(rocket.V, 'z', -10000, 10000).onChange(updateOrbitRendering);
-velFolder.open();
-
-const stateFolder = gui.addFolder("State");
-velFolder.add(state, 'time', 0, 3600 * 24 * 365).onChange(() => {
-    let camPosRelToFocusedBody = camera.position.clone().sub(scene.getObjectByName(state.focusedBody).position);
-
-    scene.getObjectByName("Planets")?.traverse((body) => {
-        if (!body.userData.parentBody || !body.userData.params) {
+    scene.traverse((obj) => {
+        let orbit = obj.userData?.orbit;
+        if (!orbit) {
             return;
         }
 
-        body.position.copy(Orbits.getPositionVelocity(body.userData.params, body.userData.parentBody, { t: state.time }).R.multiplyScalar(Options.COORD_SCALE));
+        obj.position.copy(orbit.getPositionVelocity({t: time}).position.multiplyScalar(COORD_SCALE));
     });
 
-    camera.position.copy(scene.getObjectByName(state.focusedBody).position.clone().add(camPosRelToFocusedBody));
-    controls.target.copy(scene.getObjectByName(state.focusedBody).position);
-});
-stateFolder.open();
-*/
+    return time;
+}
+
+function updateOrbits() {
+    let states = recalculateOrbits();
+    updateOrbitRendering(states);
+}
+
+{
+    const geometry = new THREE.SphereGeometry(.05, 32, 16);
+    const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const rocket = new THREE.Mesh(geometry, material);
+    rocket.name = "rocket";
+    getScene().add(rocket);
+    const state = getStateAtTime(0);
+    //getScene().getObjectByName(state.orbit.body)!.attach(rocket);
+    rocket.position.copy(state.orbit.getPositionVelocity({ t: 0 }).position.multiplyScalar(COORD_SCALE));
+}
+const gui = new GUI();
+{
+    const folder = gui.addFolder("Time").onChange(() => {
+        let time = updateDisplayTime();
+        updateOrbits();
+        updateAnnotations();
+
+        let rocket = getScene().getObjectByName("rocket")!;
+
+        let state = getStateAtTime(time);
+        getScene().getObjectByName(state.orbit.body)!.attach(rocket);
+        rocket.position.copy(state.orbit.getPositionVelocity({t: time}).position.multiplyScalar(COORD_SCALE));
+    });
+    
+    folder.add(displayTime, "minutes", 0, 60);
+    folder.add(displayTime, "hours", 0, 24);
+    folder.add(displayTime, "days", 0, 365);
+    folder.add(displayTime, "years", 0, 100);
+}
+
+gui.add({
+    addManeuver: () => {
+        const maneuvers = getManeuvers();
+        
+        maneuvers.push({ time: 100, orbits: 0, prograde: 0, normal: 0, radialout: 0 })
+        let maneuver = maneuvers[maneuvers.length - 1];
+
+        const folder = gui.addFolder(`Maneuver ${maneuvers.length}`).onChange(updateOrbits);
+        folder.add(maneuver, "time", 1, 10000 /*(currentState.orbit.getEscapeInfo(currentState.tstart)?.escapeTime - currentState.tstart) || currentState.orbit.getPeriod()*/).name("Time to Maneuver");
+        folder.add(maneuver, "orbits", 0, 10, 1).name("Number of Orbits");
+        folder.add(maneuver, "prograde", -4000, 4000).name("Prograde Velocity Change");
+        folder.add(maneuver, "normal", -4000, 4000).name("Normal Velocity Change");
+        folder.add(maneuver, "radialout", -4000, 4000).name("Radial Velocity Change");
+    }
+}, "addManeuver").name("Add Maneuver");
+
+const controls = new OrbitControls(getCamera(), getRenderer().domElement);
+export function getCameraControls() {
+    return controls;
+}
+
+let focusedBodyName = "Earth";
+let focusedBodyOldPosition = new THREE.Vector3();
+export function updateCamera(newBodyName = "") {
+    const camera = getCamera();
+    let focusedBody;
+
+    if (newBodyName && newBodyName != focusedBodyName) {
+        const oldBody = getScene().getObjectByName(focusedBodyName)!;
+        focusedBody = getScene().getObjectByName(newBodyName)!;
+
+        camera.position.copy(focusedBody.position.clone().add(camera.position.clone().sub(oldBody.position)));
+
+        focusedBodyName = newBodyName;
+        focusedBodyOldPosition = focusedBody.position.clone();
+    } else {
+        focusedBody = getScene().getObjectByName(focusedBodyName);
+
+        if (!focusedBodyOldPosition.equals(focusedBody.position)) {
+            camera.position.copy(focusedBody.position.clone().add(camera.position.clone().sub(focusedBodyOldPosition)));
+        }
+
+        focusedBodyOldPosition = focusedBody.position.clone();
+    }
+ 
+    getCameraControls().target.copy(focusedBody.position);
+    getCameraControls().update();
+}

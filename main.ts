@@ -2,56 +2,30 @@
 // I don't know if you're going to read this, but please know that this is some of the worst code I have ever written and I'm not proud of it.
 
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-import * as Orbits from './orbit.ts';
-import * as Options from './options.ts';
-import * as Rendering from './rendering.ts';
-import { updateOrbitRendering, annotations } from './controls.ts';
-
-const scene = new THREE.Scene();
-Options.globals.scene = scene;
-{
-    const geometry = new THREE.SphereGeometry(.05, 32, 16);
-    const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const maneuverNode = new THREE.Mesh(geometry, material);
-    maneuverNode.name = "orbitHoverMarker";
-    scene.add(maneuverNode);
-}
-
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.01, 1_000_000);
-Options.globals.camera = camera;
-
-const renderer = new THREE.WebGLRenderer();
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
-Options.globals.renderer = renderer;
-
-window.addEventListener("resize", () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-});
+import { getCamera, getRenderer, getScene } from "./graphics.ts";
+import { getAnnotations } from "./annotation.ts";
+import { recalculateOrbits } from "./mechanics.ts";
 
 // add planets
-scene.add(Rendering.initPlanets());
+import { updateOrbitRendering, initPlanets } from './rendering.ts';
+getScene().add(initPlanets());
+updateOrbitRendering(recalculateOrbits());
 
-const controls = new OrbitControls(camera, renderer.domElement);
-//controls.update() must be called after any manual changes to the camera's transform
-camera.position.copy(scene.getObjectByName("Earth")!.position.clone().add(new THREE.Vector3(0, 0, 10)));
-controls.target.copy(scene.getObjectByName("Earth")!.position);
-controls.update();
-
-updateOrbitRendering();
+// init camera
+import { getCameraControls, updateCamera } from './controls.ts';
+getCamera().position.copy(getScene().getObjectByName("Earth")!.position.clone().add(new THREE.Vector3(0, 0, 10)));
+getCameraControls().target.copy(getScene().getObjectByName("Earth")!.position);
+getCameraControls().update();
 
 function animate() {
-    controls.update();
+    updateCamera();
 
-    renderer.render(scene, camera);
+    getRenderer().render(getScene(), getCamera());
     
-    for (const annotation of annotations.annotations) {
+    for (const [key, annotation] of Object.entries(getAnnotations())) {
         annotation.update();
     }
 }
 
-renderer.setAnimationLoop(animate);
+getRenderer().setAnimationLoop(animate);
