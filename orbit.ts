@@ -35,7 +35,7 @@ export const Bodies: {[key: string] : {name: string; parentBody?: string; radius
         parentBody: "Sun",
         radius: 6051800,
         mu: 3.24859e14,
-        texture: "/2k_venus_surface.jpg",
+        texture: "/2k_venus_atmosphere.jpg",
         params: {
             a: 108208925513,
             e: 0.00677323,
