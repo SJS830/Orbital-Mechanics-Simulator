@@ -197,13 +197,18 @@ export function getSOI(body: string) {
 export class Orbit {
     body: string;
     params: OrbitParams;
+    invert: boolean;
 
-    constructor(body: string, info: {params: OrbitParams} | {position: THREE.Vector3, velocity: THREE.Vector3, time: number}) {
+    constructor(body: string, info: { params: OrbitParams } | { position: THREE.Vector3, velocity: THREE.Vector3, time: number, invert?: boolean }) {
         this.body = body;
 
         if ("params" in info) {
             this.params = info.params;
         } else {
+            if (info.invert) {
+                this.invert = true;
+            }
+
             let time = info.time;
 
             //axes fix
@@ -212,6 +217,11 @@ export class Orbit {
             //-z to fix orientation issues
             let position = new THREE.Vector3(info.position.x, -info.position.z, info.position.y);
             let velocity = new THREE.Vector3(info.velocity.x, -info.velocity.z, info.velocity.y);
+
+            //if (info.flipAngularMomentum) {
+                //position.negate();
+                //velocity.negate();
+            //}
 
             //make sure inclination isnt 0
             if (velocity.z == 0) {
@@ -222,16 +232,25 @@ export class Orbit {
 
             // orbital momentum vector
             const H = new THREE.Vector3().crossVectors(position, velocity);
+            //if (info.flipAngularMomentum) {
+                //H.negate();
+            //}
 
             // eccentricity vector
             const evec = new THREE.Vector3().crossVectors(velocity, H).divideScalar(mu).sub(position.clone().normalize());
+            //if (info.flipAngularMomentum) {
+                //evec.negate();
+            //}
 
             // const vector pointing towards ascending node
             let N = new THREE.Vector3(-H.y, H.x, 0);
+            //if (info.flipAngularMomentum) {
+                //N.negate();
+            //}
 
             // true anomaly
             let v = evec.angleTo(position);
-            if (position.dot(velocity) >= 0) {
+            if (position.dot(velocity) < 0) {
                 v = 2 * Math.PI - v;
             }
             //console.log({v});
@@ -272,7 +291,7 @@ export class Orbit {
                 
                 const M = e * Math.sinh(F) - F;
 
-                tau = time - M / (Math.sqrt(mu / a * a));
+                tau = time - M / (Math.sqrt(mu) / Math.sqrt(Math.abs(a * a * a)));
             }
 
             this.params = { a, e, omega, sigma, i, tau };
@@ -360,6 +379,10 @@ export class Orbit {
             phi = Math.PI / 2 + a * Math.acos(Math.sqrt((e * e - 1) / (r * (2 * a + r))));
         }
 
+        if (this.invert) {
+            v = -v;
+        }
+
         //1 + e * Math.cos(v) = 0
         //e * Math.cos(v) = -1
         //v = Math.acos(-1 / e)
@@ -389,13 +412,18 @@ export class Orbit {
             console.log({o, oprime, Rprime, Vprime});
         }*/
 
+        //if (this.invert) {
+            //V.negate();
+        //}
+
         return { position: R, velocity: V, true_anomaly: v };
     }
 
     getPointsOnOrbitCached: {[key: string]: {positions: THREE.Vector3[], velocities: THREE.Vector3[], true_anomalies: number[], SOI: number}} = {};
-    getPointsOnOrbit(N: number = 2048, onlyInSphereOfInfluence = true, timerange?: {min: number; max: number;}) {
+    getPointsOnOrbit(N: number = 2048, onlyInSphereOfInfluence = true, timerange?: {min: number; max: number; }, useCache = false) {        
         let stringifiedArgs = JSON.stringify({ N, onlyInSphereOfInfluence, timerange });
-        if (this.getPointsOnOrbitCached[stringifiedArgs]) {
+        if (useCache && this.getPointsOnOrbitCached[stringifiedArgs]) {
+            console.log({stringifiedArgs});
             return this.getPointsOnOrbitCached[stringifiedArgs];
         }
 
@@ -407,9 +435,12 @@ export class Orbit {
 
         let vmin = 0; let vmax = 2 * Math.PI;
         if (timerange) {
-            if (this.params.e >= 1 || timerange.max - timerange.min < this.getPeriod()) {
+            if (this.params.e >= 1 || (this.params.e < 1 && timerange.max - timerange.min < this.getPeriod())) {
                 vmin = this.getPositionVelocity({ t: timerange.min }).true_anomaly;
                 vmax = this.getPositionVelocity({ t: timerange.max }).true_anomaly;
+
+                vmin = THREE.MathUtils.euclideanModulo(vmin, 2 * Math.PI);
+                vmax = THREE.MathUtils.euclideanModulo(vmax, 2 * Math.PI);
             }
         } else {
             if (params.e >= 1) {
@@ -418,6 +449,8 @@ export class Orbit {
                 vmax = Math.PI - Math.acos(1 / params.e) - .0001;
             }
         }
+
+        //console.log({ this: this, timerange, period: this.getPeriod(), vmin, vmax });
    
         let SOI = getSOI(body);
 
@@ -459,12 +492,15 @@ export class Orbit {
     }
 
     getEscapeInfo(time: number) {      
-        let rocketPos;
+        let thisRef = this;
 
-        function doStuff(thisRef, t) {
+        function doStuff(t) {
+            //console.log("t",{t});
             let bodyPositions = getBodyPositions(t);
 
-            rocketPos = thisRef.getPositionVelocity({ t }).position;
+            //console.log({bodyPositions});
+
+            let rocketPos = thisRef.getPositionVelocity({ t }).position;
             let rocketVel = thisRef.getPositionVelocity({ t }).velocity;
             let rocketPosAbs = rocketPos.clone().add(bodyPositions[thisRef.body].position);
             let rocketVelAbs = rocketVel.clone().add(bodyPositions[thisRef.body].velocity);
@@ -479,42 +515,96 @@ export class Orbit {
                 return undefined;
             }
 
+            let escapePositionNew = rocketPosAbs.clone().sub(bodyPositions[closestBody].position);
+            let escapeVelocityNew = rocketVelAbs.clone().sub(bodyPositions[closestBody].velocity);
+
+            let newOrbit = new Orbit(
+                closestBody,
+                {
+                    position: escapePositionNew,
+                    velocity: escapeVelocityNew,
+                    time: t,
+                    invert: true
+                }
+            );
+
+            /*newOrbit.params.sigma += Math.PI;
+            newOrbit.params.sigma = THREE.MathUtils.euclideanModulo(newOrbit.params.sigma, 2 * Math.PI);
+
+            newOrbit.params.i *= -1;
+
+            newOrbit.params.omega += Math.PI;
+            newOrbit.params.sigma = THREE.MathUtils.euclideanModulo(newOrbit.params.omega, 2 * Math.PI);*/
+
             return {
                 escapeTime: t,
+
                 escapePositionLocal: rocketPos,
-                escapePositionNew: rocketPosAbs.clone().sub(closestBodyInfo.position),
+                escapePositionNew,
+
                 escapeVelocityLocal: rocketVel,
-                escapeVelocityNew: rocketVelAbs.clone().sub(closestBodyInfo.velocity),
+                escapeVelocityNew,
+
                 newBody: closestBody,
-                oldBody: thisRef.body
+                oldBody: thisRef.body,
+
+                newOrbit
             };
         }
 
-        for (let i = 0; i < 1000; i++) {
-            time += 100;
-            let stuff = doStuff(this, time);
-            if (stuff) {
-                return stuff;
+        function binsearch(low, high) {
+            let result = doStuff(high);
+            while (high - low > .1) {
+                let mid = (low + high) / 2;
+                let midStuff = doStuff(mid);
+                if (midStuff) {
+                    result = midStuff;
+                    high = mid;
+                } else {
+                    low = mid;
+                }
+            }
+            return result;
+        }
+
+        if (this.params.e >= 1) {
+            for (let i = 0; i < 1000; i++) {
+                time += 100;
+                let stuff = doStuff(time);
+                if (stuff) {
+                    return binsearch(time - 100, time);
+                }
+            }
+
+            for (let i = 0; i < 100; i++) {
+                time += 1000;
+                let stuff = doStuff(time);
+                if (stuff) {
+                    return binsearch(time - 1000, time);
+                }
+            }
+
+            for (let i = 0; i < 100; i++) {
+                time += 10000;
+                let stuff = doStuff(time);
+                if (stuff) {
+                    return binsearch(time - 10000, time);
+                }
+            }    
+        } else {
+            let period = this.getPeriod();
+            let dt = period / 200;
+
+            for (let i = 0; i < 1000; i++) {
+                time += dt;
+                let stuff = doStuff(time);
+                if (stuff) {
+                    return binsearch(time - dt, time);
+                }
             }
         }
 
-        for (let i = 0; i < 100; i++) {
-            time += 1000;
-            let stuff = doStuff(this, time);
-            if (stuff) {
-                return stuff;
-            }
-        }
-
-        for (let i = 0; i < 100; i++) {
-            time += 10000;
-            let stuff = doStuff(this, time);
-            if (stuff) {
-                return stuff;
-            }
-        }
-
-        console.log({maxDist: rocketPos.length()});
+        //console.log({maxDist: rocketPos.length()});
     }
 
     getMeanAnomaly(t: number, mod: boolean = true) {
@@ -536,7 +626,6 @@ for (const [name, info] of Object.entries(Bodies)) {
 
 export function getBodyPositions(time: number) {
     const states: { [key: string]: { position: THREE.Vector3, velocity: THREE.Vector3 } } = {};
-    time = 0;
 
     for (let body of Object.keys(Bodies)) {
         let orbit = BodiesOrbits[body];

@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 
 import { getCamera, getRenderer, getScene } from "./graphics.ts";
-import { getAnnotations } from "./annotation.ts";
+import { getAnnotations, updateAnnotations } from "./annotation.ts";
 import { recalculateOrbits } from "./mechanics.ts";
 
 // add planets
@@ -14,7 +14,7 @@ updateOrbitRendering(recalculateOrbits());
 
 // init camera
 import { getCameraControls, updateCamera } from './controls.ts';
-getCamera().position.copy(getScene().getObjectByName("Earth")!.position.clone().add(new THREE.Vector3(0, 0, 10)));
+getCamera().position.copy(getScene().getObjectByName("Earth")!.position.clone().add(new THREE.Vector3(0, 3, 3)));
 getCameraControls().target.copy(getScene().getObjectByName("Earth")!.position);
 getCameraControls().update();
 
@@ -23,9 +23,7 @@ function animate() {
 
     getRenderer().render(getScene(), getCamera());
     
-    for (const [key, annotation] of Object.entries(getAnnotations())) {
-        annotation.update();
-    }
+    updateAnnotations();
 }
 
 getRenderer().setAnimationLoop(animate);

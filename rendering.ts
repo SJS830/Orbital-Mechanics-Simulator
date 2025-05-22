@@ -5,7 +5,7 @@ import SpriteText from 'three-spritetext';
 import { getCamera, getRenderer, getScene } from "./graphics";
 import { Annotation } from "./annotation";
 import { COORD_SCALE } from "./options";
-import { getStatesList } from "./mechanics";
+import { getManeuvers, getStatesList } from "./mechanics";
 
 function numPointsOnOrbit(orbit: Orbit) {
     let numPoints;
@@ -42,10 +42,9 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
     }
 
     let { positions, SOI } = orbit.getPointsOnOrbit(Math.min(numPointsOnOrbit(orbit), 8192), true, timerange);
-    positions.map(x => x.multiplyScalar(Options.COORD_SCALE));
 
-    line.geometry.setFromPoints(positions);
     line.geometry.setDrawRange(0, positions.length);
+    line.geometry.setFromPoints(positions.map(x => x.clone().multiplyScalar(Options.COORD_SCALE)));
 
     if (addLabels) {
         let vmin = 0; let vmax = 2 * Math.PI;
@@ -101,20 +100,21 @@ export function renderOrbit(orbit: Orbit, line?: THREE.Line, addLabels: boolean 
 
 let Z = 0; //kill me now please
 export const annotations: { annotations: Annotation[] } = { annotations: [] };
-export function updateOrbitRendering(statesList) {
+export function updateOrbitRendering(statesList: { tstart: number, orbit: Orbit, cause?: { type: "maneuver"; maneuverNumber: number; maneuverPosition: THREE.Vector3 } | { type: "escape"; escapeInfo: { escapeTime: number; newBody: string; oldBody: string; escapePosition: THREE.Vector3 } } }[]) {
+    console.log({statesList});
+    let renderedLines: THREE.Object3D[] = [];
+
     const scene = getScene();
 
     let rocketOrbit;
     while ((rocketOrbit = scene.getObjectByName("rocketOrbit"))) {
-        rocketOrbit.material.dispose();
-        rocketOrbit.geometry.dispose();
-        rocketOrbit.parent.remove(rocketOrbit);
+        rocketOrbit.removeFromParent();
     }
 
     let maneuverNode;
     while ((maneuverNode = scene.getObjectByName(`maneuverNode${Z - 1}`))) {
         //maneuverNode.dispose();
-        maneuverNode.parent.remove(maneuverNode);
+        maneuverNode.removeFromParent();
     }
     Z += 1;
 
@@ -123,13 +123,15 @@ export function updateOrbitRendering(statesList) {
 
         let timerange;
         if (i + 1 < statesList.length) {
-            timerange = { min: statesList[i].tstart, max: statesList[i + 1].tstart };
+            //timerange = { min: statesList[i].tstart, max: statesList[i + 1].tstart };
         }
 
         let line = renderOrbit(orbit, undefined, true, timerange);
         line.name = "rocketOrbit";
         line.material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-        scene.getObjectByName(orbit.body)?.add(line);
+        scene.getObjectByName(orbit.body)!.add(line);
+
+        renderedLines.push(line);
     }
 
     for (const annotation of annotations.annotations) {
@@ -138,23 +140,29 @@ export function updateOrbitRendering(statesList) {
 
     annotations.annotations = [];
 
-    for (const state of statesList) {
+    for (let i = 0; i < statesList.length; i++) {
+        let state = statesList[i];
+
         if (!state.cause) {
             continue;
         }
 
         if (state.cause.type == "maneuver") {
+            let maneuver = getManeuvers()[state.cause.maneuverNumber];
+            
             let ele = document.createElement("span");
-            ele.innerHTML = "<p style='color: white'>maneuver</p>";
+            ele.innerHTML = `<p style='color: white; white-space: pre-line'>Maneuver \n Prograde: ${maneuver.prograde.toFixed(2)}m/s \n Radial: ${maneuver.radialout.toFixed(2)}m/s \n Normal: ${maneuver.normal.toFixed(2)}m/s</p>`;
 
-            annotations.annotations.push(new Annotation(state.cause.maneuverPosition.clone().multiplyScalar(COORD_SCALE), ele));
+            annotations.annotations.push(new Annotation(state.cause.maneuverPosition.clone().multiplyScalar(COORD_SCALE), ele, getScene().getObjectByName(state.orbit.body)));
         } else if (state.cause.type == "escape") {
             let ele = document.createElement("span");
-            ele.innerHTML = "<p style='color: white'>escape</p>";
+            ele.innerHTML = `<p style='color: white'>Escape from ${statesList[i - 1].orbit.body} to ${state.orbit.body}</p>`;
 
-            annotations.annotations.push(new Annotation(state.cause.escapeInfo.escapePosition.clone().multiplyScalar(COORD_SCALE), ele));
+            annotations.annotations.push(new Annotation(state.cause.escapeInfo.escapePosition.clone().multiplyScalar(COORD_SCALE), ele, getScene().getObjectByName(statesList[i - 1].orbit.body)));
         }
     }
+
+    console.log({renderedLines});
 }
 
 function createPlanetMesh(info: { radius: number; texture: string; name: string; }): THREE.Mesh {
@@ -176,7 +184,7 @@ export function initPlanets(): THREE.Group {
     planets.name = "Planets";
 
     // too lazy to think of a smarter way to have different levels of recursion for orbiting bodies
-    let planetsAlreadyAdded: [string] = ["your mom"];
+    let planetsAlreadyAdded: [string] = [""];
     for (let i = 0; i < 10; i++) {
         for (const bodyIndex in Bodies) {
             let body = Bodies[bodyIndex];
@@ -225,7 +233,14 @@ export function initPlanets(): THREE.Group {
     return planets;
 }
 
-window.addEventListener("mousemove", (event) => {
+{
+    const geometry = new THREE.SphereGeometry(.05, 32, 16);
+    const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+    const maneuverNode = new THREE.Mesh(geometry, material);
+    maneuverNode.name = "orbitHoverMarker";
+    getScene().add(maneuverNode);
+}
+window.addEventListener("mousemovee", (event) => {
     let camera = getCamera();
     let renderer = getRenderer();
     let scene = getScene();
