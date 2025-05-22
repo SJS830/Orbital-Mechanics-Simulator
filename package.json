@@ -1,0 +1,22 @@
+{
+  "name": "orbit-simulator",
+  "version": "1.0.0",
+  "description": "Keperlian Orbital Mechanics Simulator",
+  "main": "index.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "lil-gui": "^0.20.0",
+    "three": "^0.176.0",
+    "three-spritetext": "^1.9.6"
+  },
+  "devDependencies": {
+    "@types/dat.gui": "^0.7.13",
+    "@types/three": "^0.176.0",
+    "dat.gui": "^0.7.9",
+    "vite": "^6.3.5"
+  }
+}
