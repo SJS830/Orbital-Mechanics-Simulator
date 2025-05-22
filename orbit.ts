@@ -329,6 +329,8 @@ export class Orbit {
                 }
 
                 v = 2 * Math.atan(Math.sqrt((1 + e) / (1 - e)) * Math.tan(E / 2));
+
+                //console.log({M, E, v});
             } else {
                 v = at.v;
             }
@@ -337,6 +339,8 @@ export class Orbit {
 
             V2 = mu * (2 / r - 1 / a);
             phi = Math.asin(Math.sqrt(a * p / (r * (2 * a - r))));
+
+            //console.log({phi, V2, r, v});
         } else { //hyperbola
             a = Math.abs(a); //too lazy to do proper fix
 
@@ -363,12 +367,12 @@ export class Orbit {
 
                 r = a * (e * Math.cosh(E) - 1);
 
-                //v = 2 * Math.atan(Math.sqrt((e + 1) / (e - 1)) * Math.tanh(E / 2));
+                v = 2 * Math.atan(Math.sqrt((e + 1) / (e - 1)) * Math.tanh(E / 2));
 
                 // orbital motion page 85, precision errors
-                let q = 2 * (Math.atan(Math.exp(E)) - Math.PI / 4);
+                //let q = 2 * (Math.atan(Math.exp(E)) - Math.PI / 4);
 
-                v = Math.atan2(Math.sqrt(e * e - 1) * Math.sin(q), e * Math.cos(q) - 1);
+                //v = Math.atan2(Math.sqrt(e * e - 1) * Math.sin(q), e * Math.cos(q) - 1);
                 //console.log({at, v, E, M});
             } else {
                 v = at.v;
@@ -381,11 +385,14 @@ export class Orbit {
 
         if (this.invert) {
             v = -v;
+            //phi += Math.PI; //phi = -phi;
         }
 
         //1 + e * Math.cos(v) = 0
         //e * Math.cos(v) = -1
         //v = Math.acos(-1 / e)
+
+        //console.log({v, phi, V2, r, this: this, at: at});
 
         // position and velocity in orbital plane
         const o = new THREE.Vector3(Math.cos(v), Math.sin(v), 0).multiplyScalar(r);
@@ -504,6 +511,8 @@ export class Orbit {
             let rocketVel = thisRef.getPositionVelocity({ t }).velocity;
             let rocketPosAbs = rocketPos.clone().add(bodyPositions[thisRef.body].position);
             let rocketVelAbs = rocketVel.clone().add(bodyPositions[thisRef.body].velocity);
+
+            //console.log({this: thisRef, rocketPosAbs});
 
             let [closestBody, closestBodyInfo] = Object.entries(bodyPositions).filter(x => {
                 let [body, pos] = x;

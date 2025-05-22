@@ -147,7 +147,7 @@ export function updateCamera(newBodyName = "") {
     if (!focusedBodyOldPosition) {
         focusedBodyOldPosition = getScene().getObjectByName("Earth")!.position.clone();
     }
-    
+
     const camera = getCamera();
     let focusedBody: THREE.Object3D;
 
@@ -184,3 +184,7 @@ window.addEventListener("keydown", (event) => {
         }
     }
 });
+
+setTimeout(() => {
+    updateCamera("rocket");
+}, 100);
