@@ -253,6 +253,7 @@ export class Orbit {
             if (position.dot(velocity) < 0) {
                 v = 2 * Math.PI - v;
             }
+            v = -v; //TEST TO FIX GLITCH
             //console.log({v});
 
             // inclination
