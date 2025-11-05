@@ -162,8 +162,16 @@ export function updateOrbitRendering(statesList: { tstart: number, orbit: Orbit,
 
             let ele = document.createElement("span");
             ele.innerHTML = `
+                <p style='color: white;'>Maneuver ${state.cause.maneuverNumber}</p>
                 <p style='color: white; white-space: nowrap'>
-                    Maneuver: Prograde: ${maneuver.prograde.toFixed(2)}m/s 
+                    Time: ${maneuver.time.toFixed(0)}s 
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].time -= 1000; recalculateOrbits(); updateOrbitRendering(getStatesList())'>-1000</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].time -= 100; recalculateOrbits(); updateOrbitRendering(getStatesList())'>-100</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].time += 100; recalculateOrbits(); updateOrbitRendering(getStatesList())'>+100</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].time += 1000; recalculateOrbits(); updateOrbitRendering(getStatesList())'>+1000</button>
+                </p>
+                <p style='color: white; white-space: nowrap'>
+                    Prograde: ${maneuver.prograde.toFixed(2)}m/s 
                     <button onclick='getManeuvers()[${state.cause.maneuverNumber}].prograde -= 100; recalculateOrbits(); updateOrbitRendering(getStatesList())'>-100</button>
                     <button onclick='getManeuvers()[${state.cause.maneuverNumber}].prograde -= 10; recalculateOrbits(); updateOrbitRendering(getStatesList())'>-10</button>
                     <button onclick='getManeuvers()[${state.cause.maneuverNumber}].prograde += 10; recalculateOrbits(); updateOrbitRendering(getStatesList())'>+10</button>
