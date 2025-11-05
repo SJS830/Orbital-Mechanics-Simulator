@@ -197,7 +197,7 @@ export function getSOI(body: string) {
 export class Orbit {
     body: string;
     params: OrbitParams;
-    invert: boolean;
+    invert: boolean = false;
 
     constructor(body: string, info: { params: OrbitParams } | { position: THREE.Vector3, velocity: THREE.Vector3, time: number, invert?: boolean }) {
         this.body = body;
@@ -316,16 +316,26 @@ export class Orbit {
 
                 if ("t" in at) {
                     let n = this.getN();
-
                     M = n * (at.t - tau);
+                    
+                    M = THREE.MathUtils.euclideanModulo(M, 2 * Math.PI);
+                    if (M > Math.PI) {
+                        M -= 2 * Math.PI;
+                    }
                 } else {
                     M = at.M;
                 }
 
-                E = M;
+                E = e < 0.8 ? M : M + e * Math.sin(M) / (1 - Math.sin(M + e) + Math.sin(M));
                 
-                for (let i = 0; i < 10; i++) {
+                let previousE = E;
+                for (let i = 0; i < 30; i++) {
                     E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+                    
+                    if (Math.abs(E - previousE) < 1e-6) {
+                        break;
+                    }
+                    previousE = E;
                 }
 
                 v = 2 * Math.atan(Math.sqrt((1 + e) / (1 - e)) * Math.tan(E / 2));
@@ -355,14 +365,23 @@ export class Orbit {
                 } else {
                     M = at.M;
                 }
-                /*M = THREE.MathUtils.euclideanModulo(M, 2 * Math.PI);
-                if (M == 0) {
-                    M = 2 * Math.PI;
-                }*/
 
-                E = M; //really F
-                for (let i = 0; i < 20; i++) {
-                    E = E - (e * Math.sinh(E) - E - M) / (e * Math.cosh(E) - 1);
+                // Really F
+                if (M > 0) {
+                    E = Math.log(2 * M / e + 1.8); 
+                } else {
+                    E = -Math.log(-2 * M / e + 1.8);
+                }
+
+                let previousE = E;
+                for (let i = 0; i < 30; i++) {
+                    let nextE = E - (e * Math.sinh(E) - E - M) / (e * Math.cosh(E) - 1);
+                    
+                    E = nextE;
+                    if (Math.abs(E - previousE) < 1e-6) {
+                        break;
+                    }
+                    previousE = E;
                 }
 
                 r = a * (e * Math.cosh(E) - 1);
@@ -430,7 +449,7 @@ export class Orbit {
     getPointsOnOrbit(N: number = 2048, onlyInSphereOfInfluence = true, timerange?: {min: number; max: number; }, useCache = false) {        
         let stringifiedArgs = JSON.stringify({ N, onlyInSphereOfInfluence, timerange });
         if (useCache && this.getPointsOnOrbitCached[stringifiedArgs]) {
-            console.log({stringifiedArgs});
+            //console.log({stringifiedArgs});
             return this.getPointsOnOrbitCached[stringifiedArgs];
         }
 
@@ -512,20 +531,28 @@ export class Orbit {
             let rocketPosAbs = rocketPos.clone().add(bodyPositions[thisRef.body].position);
             let rocketVelAbs = rocketVel.clone().add(bodyPositions[thisRef.body].velocity);
 
-            //console.log({this: thisRef, rocketPosAbs});
-
-            let [closestBody, closestBodyInfo] = Object.entries(bodyPositions).filter(x => {
-                let [body, pos] = x;
-
+            const candidates = Object.entries(bodyPositions).filter(x => {
+                const [body, pos] = x;
                 return (pos.position.clone().sub(rocketPosAbs).length() < getSOI(body));
-            }).sort((a, b) => getSOI(a[0]) - getSOI(b[0]))[0];
+            });
 
-            if (closestBody == thisRef.body) {
+            if (candidates.length === 0) {
+                return undefined;
+            }
+            
+            const [closestBody, closestBodyInfo] = candidates.sort((a, b) => getSOI(a[0]) - getSOI(b[0]))[0];
+
+            if (closestBody === thisRef.body) {
                 return undefined;
             }
 
-            let escapePositionNew = rocketPosAbs.clone().sub(bodyPositions[closestBody].position);
-            let escapeVelocityNew = rocketVelAbs.clone().sub(bodyPositions[closestBody].velocity);
+            const closestInfo = bodyPositions[closestBody];
+            if (!closestInfo) {
+                return undefined;
+            }
+            
+            let escapePositionNew = rocketPosAbs.clone().sub(closestInfo.position);
+            let escapeVelocityNew = rocketVelAbs.clone().sub(closestInfo.velocity);
 
             let newOrbit = new Orbit(
                 closestBody,
