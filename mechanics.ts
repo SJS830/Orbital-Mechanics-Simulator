@@ -72,6 +72,7 @@ export function recalculateOrbits() {
         statesList = statesList.filter(({ tstart }) => tstart < maneuverTimeAbs);
         let state = statesList[statesList.length - 1];
 
+
         let { orbit } = state;
 
         let { position, velocity } = orbit.getPositionVelocity({ t: maneuverTimeAbs });

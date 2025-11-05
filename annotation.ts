@@ -18,8 +18,9 @@ export class Annotation {
     position: THREE.Vector3;
     dot?: THREE.Object3D;
     parent?: THREE.Object3D;
+    offset: THREE.Vector2 = new THREE.Vector2(0, 0);
 
-    constructor(position, element: HTMLElement, parent?: THREE.Object3D, addDot = true) {
+    constructor(position, element: HTMLElement, parent?: THREE.Object3D, addDot = true, offset?: THREE.Vector2) {
         this.htmlID = `annotation${Math.random()}`;
         element.id = this.htmlID;
         document.body.append(element);
@@ -42,12 +43,12 @@ export class Annotation {
         }
         
         this.parent = parent;
-        this.update(position);
+        this.update(position, undefined, offset);
 
         annotations[this.htmlID] = this;
     }
 
-    update(position?: THREE.Vector3, newElement?: HTMLElement) {
+    update(position?: THREE.Vector3, newElement?: HTMLElement, offset?: THREE.Vector2) {
         if (position) {
             this.position = position;
         }
@@ -72,6 +73,11 @@ export class Annotation {
 
         vector.x = Math.round((0.5 + vector.x / 2) * (canvas.width));
         vector.y = Math.round((0.5 - vector.y / 2) * (canvas.height));
+
+        if (offset) {
+            vector.x += offset.x;
+            vector.y += offset.y;
+        }
 
         if (newElement) {
             document.getElementById(this.htmlID)?.remove();

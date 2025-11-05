@@ -5,7 +5,7 @@ import SpriteText from 'three-spritetext';
 import { getCamera, getRenderer, getScene } from "./graphics";
 import { Annotation } from "./annotation";
 import { COORD_SCALE } from "./options";
-import { getManeuvers, getStatesList } from "./mechanics";
+import { getManeuvers, getStatesList, recalculateOrbits } from "./mechanics";
 
 function numPointsOnOrbit(orbit: Orbit) {
     let numPoints;
@@ -129,7 +129,12 @@ export function updateOrbitRendering(statesList: { tstart: number, orbit: Orbit,
         let line = renderOrbit(orbit, undefined, true, timerange);
         line.name = "rocketOrbit";
         line.material = new THREE.MeshBasicMaterial({ color: 0xffff00 });
-        scene.getObjectByName(orbit.body)!.add(line);
+        const parentObj = scene.getObjectByName(orbit.body);
+        if (parentObj) {
+            parentObj.add(line);
+        } else {
+            continue;
+        }
 
         renderedLines.push(line);
     }
@@ -149,9 +154,35 @@ export function updateOrbitRendering(statesList: { tstart: number, orbit: Orbit,
 
         if (state.cause.type == "maneuver") {
             let maneuver = getManeuvers()[state.cause.maneuverNumber];
-            
+
+            window.getManeuvers = getManeuvers;
+            window.recalculateOrbits = recalculateOrbits;
+            window.updateOrbitRendering = updateOrbitRendering;
+            window.getStatesList = getStatesList;
+
             let ele = document.createElement("span");
-            ele.innerHTML = `<p style='color: white; white-space: pre-line'>Maneuver \n Prograde: ${maneuver.prograde.toFixed(2)}m/s \n Radial: ${maneuver.radialout.toFixed(2)}m/s \n Normal: ${maneuver.normal.toFixed(2)}m/s</p>`;
+            ele.innerHTML = `
+                <p style='color: white; white-space: nowrap'>
+                    Maneuver: Prograde: ${maneuver.prograde.toFixed(2)}m/s 
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].prograde -= 100; recalculateOrbits(); updateOrbitRendering(getStatesList())'>-100</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].prograde -= 10; recalculateOrbits(); updateOrbitRendering(getStatesList())'>-10</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].prograde += 10; recalculateOrbits(); updateOrbitRendering(getStatesList())'>+10</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].prograde += 100; recalculateOrbits(); updateOrbitRendering(getStatesList())'>+100</button>
+                </p>
+                <p style='color: white; white-space: nowrap'>
+                    Radial: ${maneuver.radialout.toFixed(2)}m/s 
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].radialout -= 100; recalculateOrbits(); updateOrbitRendering(getStatesList())'>-100</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].radialout -= 10; recalculateOrbits(); updateOrbitRendering(getStatesList())'>-10</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].radialout += 10; recalculateOrbits(); updateOrbitRendering(getStatesList())'>+10</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].radialout += 100; recalculateOrbits(); updateOrbitRendering(getStatesList())'>+100</button>
+                </p>
+                <p style='color: white; white-space: nowrap'>
+                    Normal: ${maneuver.normal.toFixed(2)}m/s 
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].normal -= 100; recalculateOrbits(); updateOrbitRendering(getStatesList())'>-100</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].normal -= 10; recalculateOrbits(); updateOrbitRendering(getStatesList())'>-10</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].normal += 10; recalculateOrbits(); updateOrbitRendering(getStatesList())'>+10</button>
+                    <button onclick='getManeuvers()[${state.cause.maneuverNumber}].normal += 100; recalculateOrbits(); updateOrbitRendering(getStatesList())'>+100</button>
+                </p>`;
 
             annotations.annotations.push(new Annotation(state.cause.maneuverPosition.clone().multiplyScalar(COORD_SCALE), ele, getScene().getObjectByName(state.orbit.body)));
         } else if (state.cause.type == "escape") {
@@ -233,14 +264,14 @@ export function initPlanets(): THREE.Group {
     return planets;
 }
 
-{
+/*{
     const geometry = new THREE.SphereGeometry(.05, 32, 16);
     const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
     const maneuverNode = new THREE.Mesh(geometry, material);
     maneuverNode.name = "orbitHoverMarker";
     getScene().add(maneuverNode);
 }
-window.addEventListener("mousemovee", (event) => {
+window.addEventListener("mousemove", (event) => {
     let camera = getCamera();
     let renderer = getRenderer();
     let scene = getScene();
@@ -344,4 +375,4 @@ window.addEventListener("mousemovee", (event) => {
     ////console.log(scene.getObjectByName("orbitHoverMarker")?.position);
     ////console.log(scene.getObjectByName("orbitHoverMarker")?.parent);
     ////console.log({ minIndex, minDistance });
-});
+});*/

@@ -64,10 +64,9 @@ function updateOrbits(recalculate = false) {
 
 function onTimeChange() {
     let time = updateDisplayTime();
-
     let rocket = getScene().getObjectByName("rocket")!;
-
     let state = getStateAtTime(time);
+
     getScene().getObjectByName(state.orbit.body)!.attach(rocket);
     rocket.position.copy(state.orbit.getPositionVelocity({ t: time }).position.multiplyScalar(COORD_SCALE));
 
@@ -133,6 +132,9 @@ gui.add({
         folder.add(maneuver, "prograde", -4000, 4000).name("Prograde Velocity Change");
         folder.add(maneuver, "normal", -4000, 4000).name("Normal Velocity Change");
         folder.add(maneuver, "radialout", -4000, 4000).name("Radial Velocity Change");
+
+        updateOrbits(true);
+        updateOrbitRendering(getStatesList());
     }
 }, "addManeuver").name("Add Maneuver");
 
@@ -144,6 +146,12 @@ export function getCameraControls() {
 let focusedBodyName = "Earth";
 let focusedBodyOldPosition;
 export function updateCamera(newBodyName = "") {
+    /*console.log("[updateCamera] Start", {
+        newBodyName,
+        current: focusedBodyName,
+        hasOldPos: !!focusedBodyOldPosition
+    });*/
+
     if (!focusedBodyOldPosition) {
         focusedBodyOldPosition = getScene().getObjectByName("Earth")!.position.clone();
     }
@@ -155,6 +163,14 @@ export function updateCamera(newBodyName = "") {
         const oldBody = getScene().getObjectByName(focusedBodyName)!;
         focusedBody = getScene().getObjectByName(newBodyName)!;
 
+        console.log("[updateCamera] Switching focus", {
+            from: focusedBodyName,
+            to: newBodyName,
+            oldBodyPos: oldBody.position.toArray(),
+            newBodyPos: focusedBody.position.toArray(),
+            cameraPos: camera.position.toArray()
+        });
+
         camera.position.copy(focusedBody.getWorldPosition(new THREE.Vector3()).add(camera.position.clone().sub(oldBody.getWorldPosition(new THREE.Vector3()))));
 
         focusedBodyName = newBodyName;
@@ -163,6 +179,12 @@ export function updateCamera(newBodyName = "") {
         focusedBody = getScene().getObjectByName(focusedBodyName)!;
 
         if (!focusedBodyOldPosition.equals(focusedBody.getWorldPosition(new THREE.Vector3()))) {
+            /*console.log("[updateCamera] Position changed", {
+                body: focusedBodyName,
+                oldPos: focusedBodyOldPosition.toArray(),
+                newPos: focusedBody.getWorldPosition(new THREE.Vector3()).toArray(),
+                cameraPos: camera.position.toArray()
+            });*/
             camera.position.copy(focusedBody.getWorldPosition(new THREE.Vector3()).clone().add(camera.position.clone().sub(focusedBodyOldPosition)));
         }
 
@@ -177,9 +199,11 @@ window.addEventListener("keydown", (event) => {
     //console.log(event);
 
     if (event.key === "Tab") {
+        event.preventDefault();
+
         if (focusedBodyName == "Earth") {
             updateCamera("rocket");
-        } else if (focusedBodyName = "rocket") {
+        } else if (focusedBodyName == "rocket") {
             updateCamera("Earth");
         }
     }
